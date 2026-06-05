@@ -12,6 +12,7 @@ from app.models.project import ProjectDetail, ProjectSummary
 from app.models.character import CharacterTable
 from app.pipeline.stage0 import run_stage0
 from app.pipeline.stage1 import run_stage1
+from app.pipeline.stage2 import run_stage2
 from app import storage
 
 router = APIRouter(tags=["projects"])
@@ -103,6 +104,15 @@ def process_project(project_id: str, from_stage: str = "preprocessing"):
                 "stage": "character_extraction",
                 "characters": len(result.characters),
             }
+        elif from_stage == "scene_synthesis":
+            result = run_stage2(project_id)
+            total_elements = sum(len(s.elements) for s in result)
+            return {
+                "status": "succeeded",
+                "stage": "scene_synthesis",
+                "scenes": len(result),
+                "elements": total_elements,
+            }
         else:
             raise HTTPException(status_code=400, detail=f"Unknown stage: {from_stage}")
     except FileNotFoundError as e:
@@ -142,6 +152,73 @@ def update_characters(project_id: str, data: dict):
     char_file.write_text(table.model_dump_json(indent=2), encoding="utf-8")
 
     return {"status": "saved", "characters": len(table.characters)}
+
+
+@router.get("/projects/{project_id}/screenplay")
+def get_screenplay(project_id: str):
+    """Return the current screenplay (generated or edited)."""
+    projects = storage.list_projects()
+    if not any(p.id == project_id for p in projects):
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    project_dir = storage.get_project_dir(project_id)
+
+    # Prefer edited version
+    edited = project_dir / "07_screenplay.edited.yaml"
+    if edited.exists():
+        import yaml
+        return yaml.safe_load(edited.read_text(encoding="utf-8"))
+
+    # Fall back to generated
+    generated = project_dir / "06_screenplay.generated.yaml"
+    if generated.exists():
+        import yaml
+        return yaml.safe_load(generated.read_text(encoding="utf-8"))
+
+    # Fall back to scenes JSON
+    scenes_file = project_dir / "04_scenes.json"
+    if scenes_file.exists():
+        scenes = json.loads(scenes_file.read_text(encoding="utf-8"))
+        # Read characters
+        char_file = project_dir / "03_characters.json"
+        characters = []
+        if char_file.exists():
+            characters = json.loads(char_file.read_text(encoding="utf-8")).get("characters", [])
+        # Read metadata
+        meta_file = project_dir / "metadata.json"
+        metadata = {}
+        if meta_file.exists():
+            metadata = json.loads(meta_file.read_text(encoding="utf-8"))
+
+        return {
+            "metadata": {
+                "project_id": project_id,
+                "title": metadata.get("title", "Untitled"),
+                "source_language": metadata.get("source_language", "zh"),
+            },
+            "characters": characters,
+            "acts": [{"id": "act_01", "title": "Act 1", "scenes": scenes}],
+        }
+
+    raise HTTPException(status_code=404, detail="Screenplay not generated yet")
+
+
+@router.put("/projects/{project_id}/screenplay")
+def update_screenplay(project_id: str, data: dict):
+    """Save edited screenplay."""
+    projects = storage.list_projects()
+    if not any(p.id == project_id for p in projects):
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    import yaml
+    project_dir = storage.get_project_dir(project_id)
+    edited_file = project_dir / "07_screenplay.edited.yaml"
+    edited_file.write_text(
+        yaml.dump(data, allow_unicode=True, default_flow_style=False, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    return {"status": "saved"}
 
 
 @router.get("/projects/{project_id}/stages/{stage}")
