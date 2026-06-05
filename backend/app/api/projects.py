@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import json
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
 
 from app.models.project import ProjectDetail, ProjectSummary
@@ -16,6 +17,7 @@ router = APIRouter(tags=["projects"])
 class CreateProjectRequest(BaseModel):
     title: str
     source_language: Optional[str] = None
+    text: Optional[str] = None
 
 
 @router.get("/projects", response_model=list[ProjectSummary])
@@ -25,9 +27,34 @@ def list_projects():
 
 
 @router.post("/projects", response_model=ProjectSummary, status_code=201)
-def create_project(req: CreateProjectRequest):
-    """Create a new project."""
-    return storage.create_project(title=req.title, source_language=req.source_language)
+async def create_project(
+    title: str = Form(...),
+    source_language: Optional[str] = Form(None),
+    text: Optional[str] = Form(None),
+    file: Optional[UploadFile] = File(None),
+):
+    """Create a new project from pasted text or uploaded file."""
+    content = None
+
+    if file is not None:
+        raw_bytes = await file.read()
+        content = raw_bytes.decode("utf-8")
+    elif text is not None:
+        content = text
+
+    if not content or not content.strip():
+        raise HTTPException(status_code=400, detail="No text content provided")
+
+    content = content.strip()
+    if source_language is None:
+        source_language = storage.detect_language(content)
+
+    summary = storage.create_project(
+        title=title,
+        source_language=source_language,
+        raw_text=content,
+    )
+    return summary
 
 
 @router.get("/projects/{project_id}", response_model=ProjectDetail)

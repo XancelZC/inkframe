@@ -6,12 +6,22 @@ MVP uses data/projects/ directory with index.json for project list.
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
 from app.models.project import ProjectIndex, ProjectSummary
 from app.models.ids import make_project_id
+
+
+def detect_language(text: str) -> str:
+    """Detect language as 'zh' or 'en'. Defaults to 'zh' if uncertain."""
+    chinese_chars = len(re.findall(r"[一-鿿]", text))
+    total_chars = len(text.strip())
+    if total_chars == 0:
+        return "zh"
+    return "zh" if chinese_chars / total_chars > 0.1 else "en"
 
 DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "projects"
 INDEX_FILE = DATA_DIR / "index.json"
@@ -42,11 +52,19 @@ def list_projects() -> list[ProjectSummary]:
     return _read_index().projects
 
 
-def create_project(title: str, source_language: Optional[str] = None) -> ProjectSummary:
+def create_project(
+    title: str,
+    source_language: Optional[str] = None,
+    raw_text: Optional[str] = None,
+) -> ProjectSummary:
     """Create a new project directory and add it to the index."""
     project_id = make_project_id(title)
     project_dir = DATA_DIR / project_id
     project_dir.mkdir(parents=True, exist_ok=True)
+
+    if raw_text:
+        raw_file = project_dir / "01_raw.txt"
+        raw_file.write_text(raw_text, encoding="utf-8")
 
     now = datetime.now(timezone.utc)
     summary = ProjectSummary(

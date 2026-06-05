@@ -24,7 +24,10 @@ class TestProjectListAPI:
         assert isinstance(resp.json(), list)
 
     def test_create_project(self):
-        resp = client.post("/api/projects", json={"title": "Test Novel", "source_language": "zh"})
+        resp = client.post(
+            "/api/projects",
+            data={"title": "Test Novel", "source_language": "zh", "text": "Some novel text"},
+        )
         assert resp.status_code == 201
         data = resp.json()
         assert data["title"] == "Test Novel"
@@ -39,7 +42,9 @@ class TestProjectListAPI:
 
     def test_get_project_detail(self):
         # Create a project first
-        create_resp = client.post("/api/projects", json={"title": "Detail Test"})
+        create_resp = client.post(
+            "/api/projects", data={"title": "Detail Test", "text": "Some text"}
+        )
         project_id = create_resp.json()["id"]
 
         resp = client.get(f"/api/projects/{project_id}")
