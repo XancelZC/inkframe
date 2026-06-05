@@ -2,11 +2,13 @@ import { useState } from "react";
 import Home from "./pages/Home";
 import NewProject from "./pages/NewProject";
 import ProjectDetail from "./pages/ProjectDetail";
+import Settings from "./pages/Settings";
 
 type Page =
   | { kind: "home" }
   | { kind: "new" }
-  | { kind: "detail"; projectId: string };
+  | { kind: "detail"; projectId: string }
+  | { kind: "settings" };
 
 export default function App() {
   const [page, setPage] = useState<Page>({ kind: "home" });
@@ -19,6 +21,7 @@ export default function App() {
         <Home
           onNewProject={() => navigate({ kind: "new" })}
           onSelectProject={(id) => navigate({ kind: "detail", projectId: id })}
+          onSettings={() => navigate({ kind: "settings" })}
         />
       );
     case "new":
@@ -32,6 +35,12 @@ export default function App() {
       return (
         <ProjectDetail
           projectId={page.projectId}
+          onBack={() => navigate({ kind: "home" })}
+        />
+      );
+    case "settings":
+      return (
+        <Settings
           onBack={() => navigate({ kind: "home" })}
         />
       );

@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from app.models.project import ProjectDetail, ProjectSummary
 from app.models.character import CharacterTable
 from app.models.status import PipelineStatus
+from app.api.models import get_active_provider_id
 from app.pipeline.stage0 import run_stage0
 from app.pipeline.stage1 import run_stage1
 from app.pipeline.stage2 import run_stage2
@@ -119,6 +120,8 @@ def process_project(project_id: str, from_stage: str = "preprocessing"):
                 )
 
     try:
+        provider_id = get_active_provider_id()
+
         if from_stage == "preprocessing":
             result = run_stage0(project_id)
             return {
@@ -129,14 +132,14 @@ def process_project(project_id: str, from_stage: str = "preprocessing"):
                 "detected_language": result.detected_language,
             }
         elif from_stage == "character_extraction":
-            result = run_stage1(project_id)
+            result = run_stage1(project_id, provider_id=provider_id)
             return {
                 "status": "succeeded",
                 "stage": "character_extraction",
                 "characters": len(result.characters),
             }
         elif from_stage == "scene_synthesis":
-            result = run_stage2(project_id)
+            result = run_stage2(project_id, provider_id=provider_id)
             total_elements = sum(len(s.elements) for s in result)
             return {
                 "status": "succeeded",

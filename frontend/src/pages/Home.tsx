@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Plus, FileText } from "lucide-react";
+import { Plus, FileText, Settings } from "lucide-react";
 
 interface ProjectSummary {
   id: string;
@@ -11,9 +11,10 @@ interface ProjectSummary {
 interface Props {
   onNewProject: () => void;
   onSelectProject: (id: string) => void;
+  onSettings: () => void;
 }
 
-export default function Home({ onNewProject, onSelectProject }: Props) {
+export default function Home({ onNewProject, onSelectProject, onSettings }: Props) {
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -32,13 +33,22 @@ export default function Home({ onNewProject, onSelectProject }: Props) {
       <header className="border-b border-[rgba(0,0,0,0.1)] px-6 py-4">
         <div className="mx-auto max-w-[1200px] flex items-center justify-between">
           <h1 className="text-[26px] font-bold tracking-[-0.625px]">InkFrame</h1>
-          <button
-            onClick={onNewProject}
-            className="inline-flex items-center gap-2 rounded-[4px] bg-[#0075de] px-4 py-2 text-[16px] font-semibold text-white hover:bg-[#005bab] active:scale-[0.96] transition-all"
-          >
-            <Plus size={16} />
-            新建项目
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={onSettings}
+              className="inline-flex items-center gap-2 rounded-[4px] bg-[rgba(0,0,0,0.05)] px-3 py-2 text-[14px] font-medium hover:bg-[rgba(0,0,0,0.08)] transition-all"
+            >
+              <Settings size={16} />
+              LLM 设置
+            </button>
+            <button
+              onClick={onNewProject}
+              className="inline-flex items-center gap-2 rounded-[4px] bg-[#0075de] px-4 py-2 text-[16px] font-semibold text-white hover:bg-[#005bab] active:scale-[0.96] transition-all"
+            >
+              <Plus size={16} />
+              新建项目
+            </button>
+          </div>
         </div>
       </header>
 
