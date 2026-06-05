@@ -84,12 +84,39 @@ def get_project(project_id: str):
     )
 
 
+STAGE_ORDER = ["preprocessing", "character_extraction", "scene_synthesis", "validation"]
+
+
 @router.post("/projects/{project_id}/process")
 def process_project(project_id: str, from_stage: str = "preprocessing"):
-    """Trigger pipeline processing from a specific stage."""
+    """Trigger pipeline processing from a specific stage.
+
+    Validates that all prerequisite stage outputs exist.
+    """
     projects = storage.list_projects()
     if not any(p.id == project_id for p in projects):
         raise HTTPException(status_code=404, detail="Project not found")
+
+    # Check prerequisites
+    if from_stage not in STAGE_ORDER:
+        raise HTTPException(status_code=400, detail=f"Unknown stage: {from_stage}")
+
+    stage_idx = STAGE_ORDER.index(from_stage)
+    if stage_idx > 0:
+        project_dir = storage.get_project_dir(project_id)
+        stage_files = {
+            "preprocessing": "02_preprocessed.json",
+            "character_extraction": "03_characters.json",
+            "scene_synthesis": "04_scenes.json",
+        }
+        for i in range(stage_idx):
+            prereq = STAGE_ORDER[i]
+            prereq_file = project_dir / stage_files.get(prereq, "")
+            if not prereq_file.exists():
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Cannot run '{from_stage}': prerequisite '{prereq}' has not been run",
+                )
 
     try:
         if from_stage == "preprocessing":

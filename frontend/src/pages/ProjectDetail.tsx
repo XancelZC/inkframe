@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from "react";
-import { ArrowLeft, Play, ChevronDown, ChevronRight, Users, FileText, AlertTriangle, CheckCircle, Download, Shield, GitBranch } from "lucide-react";
+import { ArrowLeft, Play, ChevronDown, ChevronRight, Users, FileText, AlertTriangle, CheckCircle, Download, Shield, GitBranch, RefreshCw } from "lucide-react";
 import RelationshipGraph from "../components/RelationshipGraph";
 import SceneTimeline from "../components/SceneTimeline";
 import SceneList from "../components/SceneList";
@@ -98,6 +98,7 @@ export default function ProjectDetail({ projectId, onBack }: Props) {
   const [highlightedElement, setHighlightedElement] = useState<string | null>(null);
   const [validationLog, setValidationLog] = useState<ValidationLog | null>(null);
   const [validationFilter, setValidationFilter] = useState<"all" | "error" | "warning" | "info">("all");
+  const [showRunMenu, setShowRunMenu] = useState(false);
   const screenplayRef = useRef<HTMLDivElement>(null);
 
   const loadAll = () => {
@@ -171,19 +172,35 @@ export default function ProjectDetail({ projectId, onBack }: Props) {
               <p className="text-[14px] text-[#615d59]">{project.source_language?.toUpperCase()} · {new Date(project.created_at).toLocaleDateString()}</p>
             </div>
           </div>
-          <div className="flex gap-2">
-            <button onClick={() => handleRunStage("preprocessing")} disabled={processing} className="rounded-[4px] bg-[#0075de] px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-[#005bab] disabled:opacity-50 transition-all">
-              <Play size={12} className="inline mr-1" />Stage 0
-            </button>
-            <button onClick={() => handleRunStage("character_extraction")} disabled={processing || !stageResult} className="rounded-[4px] bg-[#0075de] px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-[#005bab] disabled:opacity-50 transition-all">
-              <Users size={12} className="inline mr-1" />Stage 1
-            </button>
-            <button onClick={() => handleRunStage("scene_synthesis")} disabled={processing || !characters} className="rounded-[4px] bg-[#0075de] px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-[#005bab] disabled:opacity-50 transition-all">
-              <FileText size={12} className="inline mr-1" />Stage 2
-            </button>
-            <button onClick={() => handleRunStage("validation")} disabled={processing || !screenplay} className="rounded-[4px] bg-[#0075de] px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-[#005bab] disabled:opacity-50 transition-all">
-              <Shield size={12} className="inline mr-1" />Stage 3
-            </button>
+          <div className="flex gap-2 items-center">
+            {/* Run Pipeline Dropdown */}
+            <div className="relative">
+              <button onClick={() => setShowRunMenu(!showRunMenu)} disabled={processing}
+                className="inline-flex items-center gap-2 rounded-[4px] bg-[#0075de] px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-[#005bab] disabled:opacity-50 transition-all">
+                {processing ? <RefreshCw size={12} className="animate-spin" /> : <Play size={12} />}
+                Run Pipeline
+                <ChevronDown size={12} />
+              </button>
+              {showRunMenu && (
+                <div className="absolute right-0 top-full mt-1 w-56 rounded-[8px] border border-[rgba(0,0,0,0.1)] bg-white shadow-[rgba(0,0,0,0.1)_0px_4px_12px] z-50">
+                  {[
+                    { stage: "preprocessing", label: "Run All (from Stage 0)", icon: Play, enabled: true },
+                    { stage: "character_extraction", label: "Re-run from Stage 1", icon: Users, enabled: !!stageResult },
+                    { stage: "scene_synthesis", label: "Re-run from Stage 2", icon: FileText, enabled: !!characters },
+                    { stage: "validation", label: "Re-run from Stage 3", icon: Shield, enabled: !!screenplay },
+                  ].map(item => (
+                    <button key={item.stage}
+                      onClick={() => { handleRunStage(item.stage); setShowRunMenu(false); }}
+                      disabled={!item.enabled || processing}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-[13px] text-left hover:bg-[#f6f5f4] disabled:opacity-40 disabled:cursor-not-allowed transition-colors first:rounded-t-[8px] last:rounded-b-[8px]">
+                      <item.icon size={14} />
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
             {screenplay && (
               <>
                 <button onClick={handleSaveScreenplay} className="rounded-[4px] bg-[rgba(0,0,0,0.05)] px-3 py-1.5 text-[13px] font-medium hover:bg-[rgba(0,0,0,0.08)] transition-all">
