@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from "react";
-import { ArrowLeft, Play, ChevronDown, ChevronRight, Users, FileText, AlertTriangle, CheckCircle } from "lucide-react";
+import { ArrowLeft, Play, ChevronDown, ChevronRight, Users, FileText, AlertTriangle, CheckCircle, Download, Shield } from "lucide-react";
 
 interface ProjectDetail {
   id: string;
@@ -60,12 +60,27 @@ interface Screenplay {
   acts: { id: string; title: string; scenes: Scene[] }[];
 }
 
+interface ValidationEntry {
+  severity: "error" | "warning" | "info";
+  code: string;
+  message: string;
+  scene_id?: string | null;
+  element_id?: string | null;
+}
+
+interface ValidationLog {
+  entries: ValidationEntry[];
+  error_count: number;
+  warning_count: number;
+  info_count: number;
+}
+
 interface Props {
   projectId: string;
   onBack: () => void;
 }
 
-type Tab = "source" | "characters" | "screenplay" | "yaml";
+type Tab = "source" | "characters" | "screenplay" | "yaml" | "validation";
 
 export default function ProjectDetail({ projectId, onBack }: Props) {
   const [project, setProject] = useState<ProjectDetail | null>(null);
@@ -78,6 +93,8 @@ export default function ProjectDetail({ projectId, onBack }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>("source");
   const [highlightedPara, setHighlightedPara] = useState<string | null>(null);
   const [highlightedElement, setHighlightedElement] = useState<string | null>(null);
+  const [validationLog, setValidationLog] = useState<ValidationLog | null>(null);
+  const [validationFilter, setValidationFilter] = useState<"all" | "error" | "warning" | "info">("all");
   const screenplayRef = useRef<HTMLDivElement>(null);
 
   const loadAll = () => {
@@ -85,6 +102,7 @@ export default function ProjectDetail({ projectId, onBack }: Props) {
     fetch(`/api/projects/${projectId}/stages/preprocessing`).then(r => r.ok ? r.json() : null).then(d => { if (d) setStageResult(d); }).catch(() => {});
     fetch(`/api/projects/${projectId}/characters`).then(r => r.ok ? r.json() : null).then(d => { if (d) setCharacters(d); }).catch(() => {});
     fetch(`/api/projects/${projectId}/screenplay`).then(r => r.ok ? r.json() : null).then(d => { if (d) setScreenplay(d); }).catch(() => {});
+    fetch(`/api/projects/${projectId}/validation`).then(r => r.ok ? r.json() : null).then(d => { if (d) setValidationLog(d); }).catch(() => {});
   };
 
   useEffect(() => { loadAll(); }, [projectId]);
@@ -111,6 +129,19 @@ export default function ProjectDetail({ projectId, onBack }: Props) {
     const updated = { ...screenplay };
     (updated.acts[0].scenes[sceneIdx].elements[elIdx] as unknown as Record<string, unknown>)[field] = value;
     setScreenplay({ ...updated });
+  };
+
+  const handleExportYaml = async () => {
+    const res = await fetch(`/api/projects/${projectId}/export`);
+    if (res.ok) {
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${project?.title ?? "screenplay"}.yaml`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
   };
 
   if (loading) return <div className="min-h-screen bg-white text-[rgba(0,0,0,0.95)]"><header className="border-b border-[rgba(0,0,0,0.1)] px-6 py-4"><p className="text-[16px] text-[#615d59]">Loading...</p></header></div>;
@@ -147,10 +178,18 @@ export default function ProjectDetail({ projectId, onBack }: Props) {
             <button onClick={() => handleRunStage("scene_synthesis")} disabled={processing || !characters} className="rounded-[4px] bg-[#0075de] px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-[#005bab] disabled:opacity-50 transition-all">
               <FileText size={12} className="inline mr-1" />Stage 2
             </button>
+            <button onClick={() => handleRunStage("validation")} disabled={processing || !screenplay} className="rounded-[4px] bg-[#0075de] px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-[#005bab] disabled:opacity-50 transition-all">
+              <Shield size={12} className="inline mr-1" />Stage 3
+            </button>
             {screenplay && (
-              <button onClick={handleSaveScreenplay} className="rounded-[4px] bg-[rgba(0,0,0,0.05)] px-3 py-1.5 text-[13px] font-medium hover:bg-[rgba(0,0,0,0.08)] transition-all">
-                Save
-              </button>
+              <>
+                <button onClick={handleSaveScreenplay} className="rounded-[4px] bg-[rgba(0,0,0,0.05)] px-3 py-1.5 text-[13px] font-medium hover:bg-[rgba(0,0,0,0.08)] transition-all">
+                  Save
+                </button>
+                <button onClick={handleExportYaml} className="rounded-[4px] bg-[rgba(0,0,0,0.05)] px-3 py-1.5 text-[13px] font-medium hover:bg-[rgba(0,0,0,0.08)] transition-all">
+                  <Download size={12} className="inline mr-1" />Export
+                </button>
+              </>
             )}
           </div>
         </div>
@@ -174,10 +213,10 @@ export default function ProjectDetail({ projectId, onBack }: Props) {
       {/* Tabs */}
       <div className="mx-auto max-w-[1400px] px-6 pt-4">
         <div className="flex gap-1 border-b border-[rgba(0,0,0,0.1)]">
-          {(["source", "characters", "screenplay", "yaml"] as Tab[]).map(tab => (
+          {(["source", "characters", "screenplay", "yaml", "validation"] as Tab[]).map(tab => (
             <button key={tab} onClick={() => setActiveTab(tab)}
               className={`px-4 py-2 text-[13px] font-medium border-b-2 transition-colors capitalize ${activeTab === tab ? "border-[#0075de] text-[#0075de]" : "border-transparent text-[#615d59] hover:text-[rgba(0,0,0,0.95)]"}`}>
-              {tab === "source" ? "Source" : tab === "characters" ? `Characters${characters ? ` (${characters.characters.length})` : ""}` : tab === "screenplay" ? "Editor" : "YAML"}
+              {tab === "source" ? "Source" : tab === "characters" ? `Characters${characters ? ` (${characters.characters.length})` : ""}` : tab === "screenplay" ? "Editor" : tab === "yaml" ? "YAML" : `Validation${validationLog ? ` (${validationLog.entries.length})` : ""}`}
             </button>
           ))}
         </div>
@@ -332,6 +371,81 @@ export default function ProjectDetail({ projectId, onBack }: Props) {
               <p className="text-[16px] text-[#a39e98]">Run Stage 2 to generate screenplay.</p>
             ) : (
               <pre className="whitespace-pre-wrap text-[14px] leading-[1.5] font-mono">{JSON.stringify(screenplay, null, 2)}</pre>
+            )}
+          </div>
+        )}
+
+        {/* VALIDATION TAB */}
+        {activeTab === "validation" && (
+          <div>
+            {!validationLog ? (
+              <div className="rounded-[12px] border border-[rgba(0,0,0,0.1)] bg-[#f6f5f4] p-12 text-center">
+                <Shield size={48} className="mx-auto mb-4 text-[#a39e98]" />
+                <p className="text-[16px] text-[#615d59]">Run Stage 3 to validate consistency.</p>
+              </div>
+            ) : (
+              <>
+                {/* Summary badges */}
+                <div className="flex gap-2 mb-4">
+                  {validationLog.error_count > 0 && (
+                    <span className="rounded-[9999px] bg-[#fde8e8] px-3 py-1 text-[12px] font-semibold text-[#d44]">
+                      {validationLog.error_count} errors
+                    </span>
+                  )}
+                  {validationLog.warning_count > 0 && (
+                    <span className="rounded-[9999px] bg-[#fff3e8] px-3 py-1 text-[12px] font-semibold text-[#dd5b00]">
+                      {validationLog.warning_count} warnings
+                    </span>
+                  )}
+                  {validationLog.info_count > 0 && (
+                    <span className="rounded-[9999px] bg-[#f2f9ff] px-3 py-1 text-[12px] font-semibold text-[#097fe8]">
+                      {validationLog.info_count} info
+                    </span>
+                  )}
+                  {validationLog.entries.length === 0 && (
+                    <span className="rounded-[9999px] bg-[#e6f7f6] px-3 py-1 text-[12px] font-semibold text-[#2a9d99]">
+                      All checks passed
+                    </span>
+                  )}
+                </div>
+
+                {/* Filter */}
+                <div className="flex gap-1 mb-4">
+                  {(["all", "error", "warning", "info"] as const).map(f => (
+                    <button key={f} onClick={() => setValidationFilter(f)}
+                      className={`rounded-[4px] px-3 py-1 text-[12px] font-medium transition-colors capitalize ${validationFilter === f ? "bg-[#0075de] text-white" : "bg-[rgba(0,0,0,0.05)] text-[#615d59] hover:bg-[rgba(0,0,0,0.08)]"}`}>
+                      {f}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Entries */}
+                <div className="space-y-2">
+                  {validationLog.entries
+                    .filter(e => validationFilter === "all" || e.severity === validationFilter)
+                    .map((entry, i) => (
+                      <div key={i} className={`rounded-[8px] border p-3 ${
+                        entry.severity === "error" ? "border-[#d44]/30 bg-[#fde8e8]/30" :
+                        entry.severity === "warning" ? "border-[#dd5b00]/30 bg-[#fff3e8]/30" :
+                        "border-[#097fe8]/30 bg-[#f2f9ff]/30"
+                      }`}>
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className={`rounded-[4px] px-1.5 py-0.5 text-[11px] font-semibold ${
+                            entry.severity === "error" ? "bg-[#fde8e8] text-[#d44]" :
+                            entry.severity === "warning" ? "bg-[#fff3e8] text-[#dd5b00]" :
+                            "bg-[#f2f9ff] text-[#097fe8]"
+                          }`}>
+                            {entry.severity}
+                          </span>
+                          <span className="text-[12px] text-[#615d59] font-mono">{entry.code}</span>
+                          {entry.scene_id && <span className="text-[11px] text-[#a39e98]">{entry.scene_id}</span>}
+                          {entry.element_id && <span className="text-[11px] text-[#a39e98]">{entry.element_id}</span>}
+                        </div>
+                        <p className="text-[14px]">{entry.message}</p>
+                      </div>
+                    ))}
+                </div>
+              </>
             )}
           </div>
         )}

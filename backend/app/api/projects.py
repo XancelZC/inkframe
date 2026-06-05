@@ -15,6 +15,7 @@ from app.models.status import PipelineStatus
 from app.pipeline.stage0 import run_stage0
 from app.pipeline.stage1 import run_stage1
 from app.pipeline.stage2 import run_stage2
+from app.pipeline.stage3 import run_stage3
 from app.pipeline.progress import ProgressTracker, get_status
 from app import storage
 
@@ -115,6 +116,15 @@ def process_project(project_id: str, from_stage: str = "preprocessing"):
                 "stage": "scene_synthesis",
                 "scenes": len(result),
                 "elements": total_elements,
+            }
+        elif from_stage == "validation":
+            result = run_stage3(project_id)
+            return {
+                "status": "succeeded",
+                "stage": "validation",
+                "errors": result.error_count,
+                "warnings": result.warning_count,
+                "info": result.info_count,
             }
         else:
             raise HTTPException(status_code=400, detail=f"Unknown stage: {from_stage}")
@@ -251,6 +261,74 @@ def update_screenplay(project_id: str, data: dict):
     )
 
     return {"status": "saved"}
+
+
+@router.get("/projects/{project_id}/export")
+def export_screenplay(project_id: str):
+    """Export screenplay as YAML download."""
+    from fastapi.responses import Response
+    import yaml
+
+    projects = storage.list_projects()
+    if not any(p.id == project_id for p in projects):
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    project_dir = storage.get_project_dir(project_id)
+
+    # Prefer edited version
+    edited = project_dir / "07_screenplay.edited.yaml"
+    generated = project_dir / "06_screenplay.generated.yaml"
+
+    if edited.exists():
+        content = edited.read_text(encoding="utf-8")
+        filename = f"{project_id}_screenplay_edited.yaml"
+    elif generated.exists():
+        content = generated.read_text(encoding="utf-8")
+        filename = f"{project_id}_screenplay.yaml"
+    else:
+        # Build from scenes + characters
+        scenes_file = project_dir / "04_scenes.json"
+        char_file = project_dir / "03_characters.json"
+        if not scenes_file.exists():
+            raise HTTPException(status_code=404, detail="Screenplay not generated yet")
+
+        scenes = json.loads(scenes_file.read_text(encoding="utf-8"))
+        characters = json.loads(char_file.read_text(encoding="utf-8")).get("characters", []) if char_file.exists() else []
+
+        # Get title from index
+        title = project_id
+        for p in storage.list_projects():
+            if p.id == project_id:
+                title = p.title
+                break
+
+        screenplay = {
+            "metadata": {"project_id": project_id, "title": title},
+            "characters": characters,
+            "acts": [{"id": "act_01", "title": "Act 1", "scenes": scenes}],
+        }
+        content = yaml.dump(screenplay, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        filename = f"{project_id}_screenplay.yaml"
+
+    return Response(
+        content=content,
+        media_type="application/x-yaml",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/projects/{project_id}/validation")
+def get_validation_log(project_id: str):
+    """Return the validation log."""
+    projects = storage.list_projects()
+    if not any(p.id == project_id for p in projects):
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    log_file = storage.get_project_dir(project_id) / "validation_log.json"
+    if not log_file.exists():
+        raise HTTPException(status_code=404, detail="Validation not run yet")
+
+    return json.loads(log_file.read_text(encoding="utf-8"))
 
 
 @router.get("/projects/{project_id}/stages/{stage}")
