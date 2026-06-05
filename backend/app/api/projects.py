@@ -9,7 +9,9 @@ from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
 
 from app.models.project import ProjectDetail, ProjectSummary
+from app.models.character import CharacterTable
 from app.pipeline.stage0 import run_stage0
+from app.pipeline.stage1 import run_stage1
 from app import storage
 
 router = APIRouter(tags=["projects"])
@@ -78,23 +80,68 @@ def get_project(project_id: str):
 
 
 @router.post("/projects/{project_id}/process")
-def process_project(project_id: str):
-    """Trigger Stage 0 preprocessing."""
+def process_project(project_id: str, from_stage: str = "preprocessing"):
+    """Trigger pipeline processing from a specific stage."""
     projects = storage.list_projects()
     if not any(p.id == project_id for p in projects):
         raise HTTPException(status_code=404, detail="Project not found")
 
     try:
-        result = run_stage0(project_id)
-        return {
-            "status": "succeeded",
-            "stage": "preprocessing",
-            "chapters": len(result.chapters),
-            "paragraphs": sum(len(ch.paragraphs) for ch in result.chapters),
-            "detected_language": result.detected_language,
-        }
+        if from_stage == "preprocessing":
+            result = run_stage0(project_id)
+            return {
+                "status": "succeeded",
+                "stage": "preprocessing",
+                "chapters": len(result.chapters),
+                "paragraphs": sum(len(ch.paragraphs) for ch in result.chapters),
+                "detected_language": result.detected_language,
+            }
+        elif from_stage == "character_extraction":
+            result = run_stage1(project_id)
+            return {
+                "status": "succeeded",
+                "stage": "character_extraction",
+                "characters": len(result.characters),
+            }
+        else:
+            raise HTTPException(status_code=400, detail=f"Unknown stage: {from_stage}")
     except FileNotFoundError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/projects/{project_id}/characters")
+def get_characters(project_id: str):
+    """Return the character table."""
+    projects = storage.list_projects()
+    if not any(p.id == project_id for p in projects):
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    char_file = storage.get_project_dir(project_id) / "03_characters.json"
+    if not char_file.exists():
+        raise HTTPException(status_code=404, detail="Characters not extracted yet")
+
+    return json.loads(char_file.read_text(encoding="utf-8"))
+
+
+@router.put("/projects/{project_id}/characters")
+def update_characters(project_id: str, data: dict):
+    """Save edited character table."""
+    projects = storage.list_projects()
+    if not any(p.id == project_id for p in projects):
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # Validate it's a valid CharacterTable
+    try:
+        table = CharacterTable.model_validate(data)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid character data: {e}")
+
+    char_file = storage.get_project_dir(project_id) / "03_characters.json"
+    char_file.write_text(table.model_dump_json(indent=2), encoding="utf-8")
+
+    return {"status": "saved", "characters": len(table.characters)}
 
 
 @router.get("/projects/{project_id}/stages/{stage}")
