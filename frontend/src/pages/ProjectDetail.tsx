@@ -1,5 +1,8 @@
 import { useEffect, useState, useRef } from "react";
-import { ArrowLeft, Play, ChevronDown, ChevronRight, Users, FileText, AlertTriangle, CheckCircle, Download, Shield } from "lucide-react";
+import { ArrowLeft, Play, ChevronDown, ChevronRight, Users, FileText, AlertTriangle, CheckCircle, Download, Shield, GitBranch } from "lucide-react";
+import RelationshipGraph from "../components/RelationshipGraph";
+import SceneTimeline from "../components/SceneTimeline";
+import SceneList from "../components/SceneList";
 
 interface ProjectDetail {
   id: string;
@@ -80,7 +83,7 @@ interface Props {
   onBack: () => void;
 }
 
-type Tab = "source" | "characters" | "screenplay" | "yaml" | "validation";
+type Tab = "source" | "characters" | "screenplay" | "yaml" | "validation" | "graph";
 
 export default function ProjectDetail({ projectId, onBack }: Props) {
   const [project, setProject] = useState<ProjectDetail | null>(null);
@@ -213,10 +216,10 @@ export default function ProjectDetail({ projectId, onBack }: Props) {
       {/* Tabs */}
       <div className="mx-auto max-w-[1400px] px-6 pt-4">
         <div className="flex gap-1 border-b border-[rgba(0,0,0,0.1)]">
-          {(["source", "characters", "screenplay", "yaml", "validation"] as Tab[]).map(tab => (
+          {(["source", "characters", "screenplay", "yaml", "validation", "graph"] as Tab[]).map(tab => (
             <button key={tab} onClick={() => setActiveTab(tab)}
               className={`px-4 py-2 text-[13px] font-medium border-b-2 transition-colors capitalize ${activeTab === tab ? "border-[#0075de] text-[#0075de]" : "border-transparent text-[#615d59] hover:text-[rgba(0,0,0,0.95)]"}`}>
-              {tab === "source" ? "Source" : tab === "characters" ? `Characters${characters ? ` (${characters.characters.length})` : ""}` : tab === "screenplay" ? "Editor" : tab === "yaml" ? "YAML" : `Validation${validationLog ? ` (${validationLog.entries.length})` : ""}`}
+              {tab === "source" ? "Source" : tab === "characters" ? `Characters${characters ? ` (${characters.characters.length})` : ""}` : tab === "screenplay" ? "Editor" : tab === "yaml" ? "YAML" : tab === "validation" ? `Validation${validationLog ? ` (${validationLog.entries.length})` : ""}` : "Graph & Timeline"}
             </button>
           ))}
         </div>
@@ -371,6 +374,46 @@ export default function ProjectDetail({ projectId, onBack }: Props) {
               <p className="text-[16px] text-[#a39e98]">Run Stage 2 to generate screenplay.</p>
             ) : (
               <pre className="whitespace-pre-wrap text-[14px] leading-[1.5] font-mono">{JSON.stringify(screenplay, null, 2)}</pre>
+            )}
+          </div>
+        )}
+
+        {/* GRAPH & TIMELINE TAB */}
+        {activeTab === "graph" && (
+          <div className="space-y-6">
+            {/* Scene Timeline */}
+            <div>
+              <h3 className="text-[14px] font-semibold mb-3 text-[#615d59] flex items-center gap-2">
+                <span>Scene Timeline</span>
+                <span className="text-[12px] text-[#a39e98]">({allScenes.length} scenes)</span>
+              </h3>
+              <SceneTimeline scenes={allScenes} />
+            </div>
+
+            {/* Relationship Graph */}
+            <div>
+              <h3 className="text-[14px] font-semibold mb-3 text-[#615d59] flex items-center gap-2">
+                <GitBranch size={14} />
+                <span>Character Relationships</span>
+                <span className="text-[12px] text-[#a39e98]">({characters?.characters.length ?? 0} characters)</span>
+              </h3>
+              {characters ? (
+                <RelationshipGraph characters={characters.characters} />
+              ) : (
+                <div className="h-[400px] rounded-[12px] border border-[rgba(0,0,0,0.1)] bg-[#f6f5f4] flex items-center justify-center">
+                  <p className="text-[#a39e98]">Run Stage 1 to see character relationships</p>
+                </div>
+              )}
+            </div>
+
+            {/* Scene List (navigation) */}
+            {allScenes.length > 0 && (
+              <div>
+                <h3 className="text-[14px] font-semibold mb-3 text-[#615d59]">Scene Navigation</h3>
+                <div className="rounded-[12px] border border-[rgba(0,0,0,0.1)] bg-[#f6f5f4] p-3 max-h-[300px] overflow-y-auto">
+                  <SceneList scenes={allScenes} />
+                </div>
+              </div>
             )}
           </div>
         )}
