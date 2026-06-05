@@ -9,6 +9,7 @@ __pycache__/
 dist/
 build/
 .vite/
+.pytest_cache/
 
 # Local runtime data
 data/
