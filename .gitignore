@@ -15,6 +15,7 @@ build/
 data/
 output/
 *.log
+backend/data/llm_config.json
 
 # Environment and secrets
 .env

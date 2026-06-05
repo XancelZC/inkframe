@@ -25,7 +25,7 @@ class OpenAICompatibleProvider(LLMProvider):
         return "openai_compatible"
 
     def list_models(self) -> list[str]:
-        return ["gpt-4o-mini", "gpt-4o", "gpt-3.5-turbo"]
+        return []  # 不预设模型，通过 fetch 从 API 获取
 
     def generate_json(self, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
         """Send a chat completion request and parse JSON response."""

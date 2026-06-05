@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from app.models.project import ProjectDetail, ProjectSummary
 from app.models.character import CharacterTable
 from app.models.status import PipelineStatus
-from app.api.models import get_active_provider_id
+from app.api.models import get_active_provider_id, get_provider_type
 from app.pipeline.stage0 import run_stage0
 from app.pipeline.stage1 import run_stage1
 from app.pipeline.stage2 import run_stage2
@@ -128,7 +128,9 @@ def process_project(project_id: str, from_stage: str = "preprocessing"):
                 )
 
     try:
-        provider_id = get_active_provider_id()
+        # 根据 active 供应商的 type 决定用哪个 LLM provider
+        active_pid = get_active_provider_id()
+        provider_id = get_provider_type(active_pid)
 
         if from_stage == "preprocessing":
             result = run_stage0(project_id)

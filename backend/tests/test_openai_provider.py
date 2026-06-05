@@ -15,8 +15,8 @@ class TestOpenAIProvider:
     def test_list_models(self):
         p = OpenAICompatibleProvider()
         models = p.list_models()
-        assert "gpt-4o-mini" in models
-        assert "gpt-4o" in models
+        assert isinstance(models, list)
+        # 不预设模型，通过 fetch 从 API 获取
 
     def test_generate_json_requires_api_key(self):
         p = OpenAICompatibleProvider()

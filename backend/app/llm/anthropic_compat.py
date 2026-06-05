@@ -22,7 +22,7 @@ class AnthropicProvider(LLMProvider):
         return "anthropic"
 
     def list_models(self) -> list[str]:
-        return ["claude-sonnet-4-20250514", "claude-haiku-4-5-20251001", "claude-3-5-sonnet-20241022"]
+        return []  # 不预设模型，通过 fetch 获取
 
     def generate_json(self, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
         """Send a message and parse JSON response."""

@@ -59,13 +59,15 @@ class TestProjectListAPI:
 
 
 class TestModelsAPI:
-    def test_list_models(self):
-        resp = client.get("/api/models")
+    def test_get_config(self):
+        resp = client.get("/api/models/config")
         assert resp.status_code == 200
-        providers = resp.json()
-        assert len(providers) >= 1
-        mock = next(p for p in providers if p["provider_id"] == "mock")
-        assert "mock-screenplay" in mock["models"]
+        data = resp.json()
+        assert "active_provider_id" in data
+        assert "providers" in data
+        assert len(data["providers"]) >= 1
+        mock = next(p for p in data["providers"] if p["id"] == "mock")
+        assert mock["type"] == "mock"
 
 
 class TestMockProvider:
