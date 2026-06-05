@@ -37,28 +37,28 @@ export default function Home({ onNewProject, onSelectProject }: Props) {
             className="inline-flex items-center gap-2 rounded-[4px] bg-[#0075de] px-4 py-2 text-[16px] font-semibold text-white hover:bg-[#005bab] active:scale-[0.96] transition-all"
           >
             <Plus size={16} />
-            New Project
+            新建项目
           </button>
         </div>
       </header>
 
       <main className="mx-auto max-w-[1200px] px-6 py-8">
-        <h2 className="text-[22px] font-bold tracking-[-0.25px] mb-6">Projects</h2>
+        <h2 className="text-[22px] font-bold tracking-[-0.25px] mb-6">项目列表</h2>
 
         {loading ? (
-          <p className="text-[16px] text-[#615d59]">Loading...</p>
+          <p className="text-[16px] text-[#615d59]">加载中...</p>
         ) : projects.length === 0 ? (
           <div className="rounded-[12px] border border-[rgba(0,0,0,0.1)] bg-[#f6f5f4] p-12 text-center">
             <FileText size={48} className="mx-auto mb-4 text-[#a39e98]" />
             <p className="text-[16px] text-[#615d59] mb-4">
-              No projects yet. Create one to get started.
+              还没有项目，创建一个开始体验吧。
             </p>
             <button
               onClick={onNewProject}
               className="inline-flex items-center gap-2 rounded-[4px] bg-[#0075de] px-4 py-2 text-[16px] font-semibold text-white hover:bg-[#005bab] active:scale-[0.96] transition-all"
             >
               <Plus size={16} />
-              New Project
+              新建项目
             </button>
           </div>
         ) : (
@@ -71,8 +71,8 @@ export default function Home({ onNewProject, onSelectProject }: Props) {
               >
                 <h3 className="text-[16px] font-semibold mb-1">{project.title}</h3>
                 <p className="text-[14px] text-[#615d59]">
-                  {project.source_language?.toUpperCase() ?? "Unknown"} ·{" "}
-                  {new Date(project.created_at).toLocaleDateString()}
+                  {project.source_language === "zh" ? "中文" : project.source_language === "en" ? "英文" : "未知"} ·{" "}
+                  {new Date(project.created_at).toLocaleDateString("zh-CN")}
                 </p>
               </div>
             ))}

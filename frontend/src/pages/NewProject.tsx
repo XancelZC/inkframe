@@ -17,11 +17,11 @@ export default function NewProject({ onBack, onCreated }: Props) {
 
   const handleSubmit = async () => {
     if (!title.trim()) {
-      setError("Title is required");
+      setError("请输入标题");
       return;
     }
     if (!text.trim() && !file) {
-      setError("Please paste text or upload a file");
+      setError("请粘贴文本或上传文件");
       return;
     }
 
@@ -43,12 +43,12 @@ export default function NewProject({ onBack, onCreated }: Props) {
       const res = await fetch("/api/projects", { method: "POST", body: formData });
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(data.detail || "Failed to create project");
+        throw new Error(data.detail || "创建项目失败");
       }
       const data = await res.json();
       onCreated(data.id);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Unknown error");
+      setError(e instanceof Error ? e.message : "未知错误");
     } finally {
       setSubmitting(false);
     }
@@ -57,69 +57,69 @@ export default function NewProject({ onBack, onCreated }: Props) {
   return (
     <div className="min-h-screen bg-[#ffffff] text-[rgba(0,0,0,0.95)]">
       <header className="border-b border-[rgba(0,0,0,0.1)] px-6 py-4">
-        <div className="mx-auto max-w-[1200px] flex items-center gap-4">
+        <div className="mx-auto max-w-[720px] flex items-center gap-4">
           <button
             onClick={onBack}
             className="inline-flex items-center gap-1 rounded-[4px] px-2 py-1 text-[14px] text-[#615d59] hover:bg-[rgba(0,0,0,0.05)] transition-colors"
           >
             <ArrowLeft size={16} />
-            Back
+            返回
           </button>
-          <h1 className="text-[22px] font-bold tracking-[-0.25px]">New Project</h1>
+          <h1 className="text-[22px] font-bold tracking-[-0.25px]">新建项目</h1>
         </div>
       </header>
 
       <main className="mx-auto max-w-[720px] px-6 py-8">
         <div className="space-y-6">
-          {/* Title */}
+          {/* 标题 */}
           <div>
-            <label className="block text-[14px] font-medium mb-1">Title</label>
+            <label className="block text-[14px] font-medium mb-1">项目标题</label>
             <input
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="My Novel"
+              placeholder="例如：骆驼祥子"
               className="w-full rounded-[4px] border border-[#dddddd] px-3 py-2 text-[16px] outline-none focus:border-[#097fe8] focus:shadow-[0_0_0_2px_rgba(9,127,232,0.15)] transition-all"
             />
           </div>
 
-          {/* Language */}
+          {/* 语言 */}
           <div>
-            <label className="block text-[14px] font-medium mb-1">Language</label>
+            <label className="block text-[14px] font-medium mb-1">原文语言</label>
             <select
               value={language}
               onChange={(e) => setLanguage(e.target.value as "auto" | "zh" | "en")}
               className="w-full rounded-[4px] border border-[#dddddd] px-3 py-2 text-[16px] outline-none focus:border-[#097fe8] focus:shadow-[0_0_0_2px_rgba(9,127,232,0.15)] transition-all"
             >
-              <option value="auto">Auto-detect</option>
-              <option value="zh">Chinese</option>
-              <option value="en">English</option>
+              <option value="auto">自动检测</option>
+              <option value="zh">中文</option>
+              <option value="en">英文</option>
             </select>
           </div>
 
-          {/* Text input */}
+          {/* 文本输入 */}
           <div>
-            <label className="block text-[14px] font-medium mb-1">Novel Text</label>
+            <label className="block text-[14px] font-medium mb-1">小说文本</label>
             <textarea
               value={text}
               onChange={(e) => {
                 setText(e.target.value);
                 if (e.target.value) setFile(null);
               }}
-              placeholder="Paste your novel text here..."
+              placeholder="在此粘贴小说文本..."
               rows={12}
               className="w-full rounded-[4px] border border-[#dddddd] px-3 py-2 text-[16px] outline-none focus:border-[#097fe8] focus:shadow-[0_0_0_2px_rgba(9,127,232,0.15)] transition-all resize-y"
             />
           </div>
 
-          {/* Divider */}
+          {/* 分隔线 */}
           <div className="flex items-center gap-4">
             <div className="h-px flex-1 bg-[rgba(0,0,0,0.1)]" />
-            <span className="text-[14px] text-[#a39e98]">or</span>
+            <span className="text-[14px] text-[#a39e98]">或者</span>
             <div className="h-px flex-1 bg-[rgba(0,0,0,0.1)]" />
           </div>
 
-          {/* File upload */}
+          {/* 文件上传 */}
           <div>
             <input
               ref={fileRef}
@@ -138,25 +138,25 @@ export default function NewProject({ onBack, onCreated }: Props) {
             >
               <Upload size={24} className="mx-auto mb-2 text-[#615d59]" />
               <p className="text-[16px] text-[#615d59]">
-                {file ? file.name : "Upload a .txt file"}
+                {file ? file.name : "上传 .txt 文件"}
               </p>
             </button>
           </div>
 
-          {/* Error */}
+          {/* 错误提示 */}
           {error && (
             <p className="rounded-[4px] bg-[#fde8e8] px-3 py-2 text-[14px] text-[#d44]">
               {error}
             </p>
           )}
 
-          {/* Submit */}
+          {/* 提交 */}
           <button
             onClick={handleSubmit}
             disabled={submitting}
             className="w-full rounded-[4px] bg-[#0075de] px-4 py-3 text-[16px] font-semibold text-white hover:bg-[#005bab] active:scale-[0.96] disabled:opacity-50 transition-all"
           >
-            {submitting ? "Creating..." : "Create Project"}
+            {submitting ? "创建中..." : "创建项目"}
           </button>
         </div>
       </main>

@@ -85,6 +85,22 @@ interface Props {
 
 type Tab = "source" | "characters" | "screenplay" | "yaml" | "validation" | "graph";
 
+const ELEMENT_TYPE_LABELS: Record<string, string> = {
+  dialogue: "对话",
+  action: "动作",
+  transition: "转场",
+  narration: "旁白",
+};
+
+const TAB_LABELS: Record<Tab, string> = {
+  source: "原文",
+  characters: "角色",
+  screenplay: "编辑器",
+  yaml: "YAML",
+  validation: "校验",
+  graph: "图谱与时间线",
+};
+
 export default function ProjectDetail({ projectId, onBack }: Props) {
   const [project, setProject] = useState<ProjectDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -148,8 +164,8 @@ export default function ProjectDetail({ projectId, onBack }: Props) {
     }
   };
 
-  if (loading) return <div className="min-h-screen bg-white text-[rgba(0,0,0,0.95)]"><header className="border-b border-[rgba(0,0,0,0.1)] px-6 py-4"><p className="text-[16px] text-[#615d59]">Loading...</p></header></div>;
-  if (!project) return <div className="min-h-screen bg-white text-[rgba(0,0,0,0.95)]"><header className="border-b border-[rgba(0,0,0,0.1)] px-6 py-4"><p className="text-[16px] text-[#d44]">Project not found</p></header></div>;
+  if (loading) return <div className="min-h-screen bg-white text-[rgba(0,0,0,0.95)]"><header className="border-b border-[rgba(0,0,0,0.1)] px-6 py-4"><p className="text-[16px] text-[#615d59]">加载中...</p></header></div>;
+  if (!project) return <div className="min-h-screen bg-white text-[rgba(0,0,0,0.95)]"><header className="border-b border-[rgba(0,0,0,0.1)] px-6 py-4"><p className="text-[16px] text-[#d44]">项目未找到</p></header></div>;
 
   const totalParagraphs = stageResult?.chapters.reduce((s, c) => s + c.paragraphs.length, 0) ?? 0;
   const allScenes = screenplay?.acts.flatMap(a => a.scenes) ?? [];
@@ -160,34 +176,36 @@ export default function ProjectDetail({ projectId, onBack }: Props) {
 
   return (
     <div className="min-h-screen bg-white text-[rgba(0,0,0,0.95)]">
-      {/* Header */}
+      {/* 顶部栏 */}
       <header className="border-b border-[rgba(0,0,0,0.1)] px-6 py-4">
         <div className="mx-auto max-w-[1400px] flex items-center justify-between">
           <div className="flex items-center gap-4">
             <button onClick={onBack} className="inline-flex items-center gap-1 rounded-[4px] px-2 py-1 text-[14px] text-[#615d59] hover:bg-[rgba(0,0,0,0.05)] transition-colors">
-              <ArrowLeft size={16} /> Back
+              <ArrowLeft size={16} /> 返回
             </button>
             <div>
               <h1 className="text-[22px] font-bold tracking-[-0.25px]">{project.title}</h1>
-              <p className="text-[14px] text-[#615d59]">{project.source_language?.toUpperCase()} · {new Date(project.created_at).toLocaleDateString()}</p>
+              <p className="text-[14px] text-[#615d59]">
+                {project.source_language === "zh" ? "中文" : project.source_language === "en" ? "英文" : "未知"} · {new Date(project.created_at).toLocaleDateString("zh-CN")}
+              </p>
             </div>
           </div>
           <div className="flex gap-2 items-center">
-            {/* Run Pipeline Dropdown */}
+            {/* 运行下拉菜单 */}
             <div className="relative">
               <button onClick={() => setShowRunMenu(!showRunMenu)} disabled={processing}
                 className="inline-flex items-center gap-2 rounded-[4px] bg-[#0075de] px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-[#005bab] disabled:opacity-50 transition-all">
                 {processing ? <RefreshCw size={12} className="animate-spin" /> : <Play size={12} />}
-                Run Pipeline
+                运行流水线
                 <ChevronDown size={12} />
               </button>
               {showRunMenu && (
                 <div className="absolute right-0 top-full mt-1 w-56 rounded-[8px] border border-[rgba(0,0,0,0.1)] bg-white shadow-[rgba(0,0,0,0.1)_0px_4px_12px] z-50">
                   {[
-                    { stage: "preprocessing", label: "Run All (from Stage 0)", icon: Play, enabled: true },
-                    { stage: "character_extraction", label: "Re-run from Stage 1", icon: Users, enabled: !!stageResult },
-                    { stage: "scene_synthesis", label: "Re-run from Stage 2", icon: FileText, enabled: !!characters },
-                    { stage: "validation", label: "Re-run from Stage 3", icon: Shield, enabled: !!screenplay },
+                    { stage: "preprocessing", label: "从头运行（阶段 0）", icon: Play, enabled: true },
+                    { stage: "character_extraction", label: "从阶段 1 重跑", icon: Users, enabled: !!stageResult },
+                    { stage: "scene_synthesis", label: "从阶段 2 重跑", icon: FileText, enabled: !!characters },
+                    { stage: "validation", label: "从阶段 3 重跑", icon: Shield, enabled: !!screenplay },
                   ].map(item => (
                     <button key={item.stage}
                       onClick={() => { handleRunStage(item.stage); setShowRunMenu(false); }}
@@ -204,10 +222,10 @@ export default function ProjectDetail({ projectId, onBack }: Props) {
             {screenplay && (
               <>
                 <button onClick={handleSaveScreenplay} className="rounded-[4px] bg-[rgba(0,0,0,0.05)] px-3 py-1.5 text-[13px] font-medium hover:bg-[rgba(0,0,0,0.08)] transition-all">
-                  Save
+                  保存
                 </button>
                 <button onClick={handleExportYaml} className="rounded-[4px] bg-[rgba(0,0,0,0.05)] px-3 py-1.5 text-[13px] font-medium hover:bg-[rgba(0,0,0,0.08)] transition-all">
-                  <Download size={12} className="inline mr-1" />Export
+                  <Download size={12} className="inline mr-1" />导出 YAML
                 </button>
               </>
             )}
@@ -215,36 +233,37 @@ export default function ProjectDetail({ projectId, onBack }: Props) {
         </div>
       </header>
 
-      {/* Stage 0 summary */}
+      {/* 阶段 0 摘要 */}
       {stageResult && (
         <div className="mx-auto max-w-[1400px] px-6 pt-4">
           <button onClick={() => setShowStageResult(!showStageResult)} className="inline-flex items-center gap-2 text-[14px] font-semibold mb-2">
-            {showStageResult ? <ChevronDown size={14} /> : <ChevronRight size={14} />}Stage 0
+            {showStageResult ? <ChevronDown size={14} /> : <ChevronRight size={14} />}阶段 0：文本预处理
           </button>
           <div className="flex gap-2 mb-2">
-            <span className="rounded-[9999px] bg-[#f2f9ff] px-2 py-0.5 text-[12px] font-semibold text-[#097fe8]">{stageResult.chapters.length}ch</span>
-            <span className="rounded-[9999px] bg-[#f2f9ff] px-2 py-0.5 text-[12px] font-semibold text-[#097fe8]">{totalParagraphs}p</span>
-            <span className="rounded-[9999px] bg-[#f2f9ff] px-2 py-0.5 text-[12px] font-semibold text-[#097fe8]">{stageResult.detected_language === "zh" ? "ZH" : "EN"}</span>
+            <span className="rounded-[9999px] bg-[#f2f9ff] px-2 py-0.5 text-[12px] font-semibold text-[#097fe8]">{stageResult.chapters.length} 章</span>
+            <span className="rounded-[9999px] bg-[#f2f9ff] px-2 py-0.5 text-[12px] font-semibold text-[#097fe8]">{totalParagraphs} 段</span>
+            <span className="rounded-[9999px] bg-[#f2f9ff] px-2 py-0.5 text-[12px] font-semibold text-[#097fe8]">{stageResult.detected_language === "zh" ? "中文" : "英文"}</span>
           </div>
           {showStageResult && <pre className="rounded-[8px] bg-[#f6f5f4] border border-[rgba(0,0,0,0.1)] p-4 max-h-[200px] overflow-auto text-[13px] font-mono">{JSON.stringify(stageResult, null, 2)}</pre>}
         </div>
       )}
 
-      {/* Tabs */}
+      {/* 标签页 */}
       <div className="mx-auto max-w-[1400px] px-6 pt-4">
         <div className="flex gap-1 border-b border-[rgba(0,0,0,0.1)]">
           {(["source", "characters", "screenplay", "yaml", "validation", "graph"] as Tab[]).map(tab => (
             <button key={tab} onClick={() => setActiveTab(tab)}
-              className={`px-4 py-2 text-[13px] font-medium border-b-2 transition-colors capitalize ${activeTab === tab ? "border-[#0075de] text-[#0075de]" : "border-transparent text-[#615d59] hover:text-[rgba(0,0,0,0.95)]"}`}>
-              {tab === "source" ? "Source" : tab === "characters" ? `Characters${characters ? ` (${characters.characters.length})` : ""}` : tab === "screenplay" ? "Editor" : tab === "yaml" ? "YAML" : tab === "validation" ? `Validation${validationLog ? ` (${validationLog.entries.length})` : ""}` : "Graph & Timeline"}
+              className={`px-4 py-2 text-[13px] font-medium border-b-2 transition-colors ${activeTab === tab ? "border-[#0075de] text-[#0075de]" : "border-transparent text-[#615d59] hover:text-[rgba(0,0,0,0.95)]"}`}>
+              {tab === "characters" ? `${TAB_LABELS[tab]}${characters ? ` (${characters.characters.length})` : ""}` : tab === "validation" ? `${TAB_LABELS[tab]}${validationLog ? ` (${validationLog.entries.length})` : ""}` : TAB_LABELS[tab]}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Tab content */}
+      {/* 标签页内容 */}
       <main className="mx-auto max-w-[1400px] px-6 py-6">
-        {/* SOURCE TAB */}
+
+        {/* 原文 */}
         {activeTab === "source" && (
           <div className="rounded-[12px] border border-[rgba(0,0,0,0.1)] bg-[#f6f5f4] p-6 max-h-[700px] overflow-y-auto">
             {project.raw_text ? (
@@ -263,17 +282,17 @@ export default function ProjectDetail({ projectId, onBack }: Props) {
                   <pre className="whitespace-pre-wrap text-[16px] leading-[1.5]">{project.raw_text}</pre>
                 )}
               </div>
-            ) : <p className="text-[16px] text-[#a39e98]">No text content</p>}
+            ) : <p className="text-[16px] text-[#a39e98]">暂无文本内容</p>}
           </div>
         )}
 
-        {/* CHARACTERS TAB */}
+        {/* 角色 */}
         {activeTab === "characters" && (
           <div>
             {!characters ? (
               <div className="rounded-[12px] border border-[rgba(0,0,0,0.1)] bg-[#f6f5f4] p-12 text-center">
                 <Users size={48} className="mx-auto mb-4 text-[#a39e98]" />
-                <p className="text-[16px] text-[#615d59]">Run Stage 1 to extract characters.</p>
+                <p className="text-[16px] text-[#615d59]">请先运行阶段 1 提取角色。</p>
               </div>
             ) : (
               <div className="space-y-3">
@@ -282,15 +301,15 @@ export default function ProjectDetail({ projectId, onBack }: Props) {
                     <div className="flex items-start justify-between">
                       <div>
                         <h3 className="text-[16px] font-semibold">{char.name}</h3>
-                        {char.aliases.length > 0 && <p className="text-[14px] text-[#615d59]">Aliases: {char.aliases.join(", ")}</p>}
+                        {char.aliases.length > 0 && <p className="text-[14px] text-[#615d59]">别名：{char.aliases.join("、")}</p>}
                         {char.description && <p className="text-[14px] mt-1">{char.description}</p>}
                       </div>
                       <span className="rounded-[9999px] bg-[#f6f5f4] px-2 py-1 text-[12px] text-[#615d59]">{char.id}</span>
                     </div>
                     {char.relationships.length > 0 && (
                       <div className="mt-3 pt-3 border-t border-[rgba(0,0,0,0.1)]">
-                        <p className="text-[12px] font-semibold text-[#615d59] mb-1">Relationships</p>
-                        {char.relationships.map((rel, i) => <p key={i} className="text-[14px] text-[#615d59]">{rel.type}: {rel.description ?? rel.target_character_id}</p>)}
+                        <p className="text-[12px] font-semibold text-[#615d59] mb-1">人物关系</p>
+                        {char.relationships.map((rel, i) => <p key={i} className="text-[14px] text-[#615d59]">{rel.type}：{rel.description ?? rel.target_character_id}</p>)}
                       </div>
                     )}
                   </div>
@@ -300,19 +319,19 @@ export default function ProjectDetail({ projectId, onBack }: Props) {
           </div>
         )}
 
-        {/* SPLIT EDITOR TAB */}
+        {/* 分栏编辑器 */}
         {activeTab === "screenplay" && (
           <div>
             {!screenplay ? (
               <div className="rounded-[12px] border border-[rgba(0,0,0,0.1)] bg-[#f6f5f4] p-12 text-center">
                 <FileText size={48} className="mx-auto mb-4 text-[#a39e98]" />
-                <p className="text-[16px] text-[#615d59]">Run Stage 2 to generate screenplay.</p>
+                <p className="text-[16px] text-[#615d59]">请先运行阶段 2 生成剧本。</p>
               </div>
             ) : (
               <div className="flex gap-4 h-[700px]">
-                {/* Left: Source text (read-only) */}
+                {/* 左侧：原文 */}
                 <div className="w-1/2 rounded-[12px] border border-[rgba(0,0,0,0.1)] bg-[#f6f5f4] p-4 overflow-y-auto">
-                  <h3 className="text-[14px] font-semibold mb-3 text-[#615d59]">Source Text</h3>
+                  <h3 className="text-[14px] font-semibold mb-3 text-[#615d59]">原文</h3>
                   {stageResult?.chapters.map(ch => (
                     <div key={ch.id} className="mb-4">
                       {ch.title && <p className="text-[12px] font-semibold text-[#a39e98] mb-2">{ch.title}</p>}
@@ -332,14 +351,14 @@ export default function ProjectDetail({ projectId, onBack }: Props) {
                   ))}
                 </div>
 
-                {/* Right: Screenplay editor */}
+                {/* 右侧：剧本编辑器 */}
                 <div ref={screenplayRef} className="w-1/2 rounded-[12px] border border-[rgba(0,0,0,0.1)] bg-white p-4 overflow-y-auto">
-                  <h3 className="text-[14px] font-semibold mb-3 text-[#615d59]">Screenplay</h3>
+                  <h3 className="text-[14px] font-semibold mb-3 text-[#615d59]">剧本</h3>
                   {allScenes.map((scene, si) => (
                     <div key={scene.id} className="mb-6">
                       <div className="flex items-center gap-2 mb-2">
                         <span className="rounded-[9999px] bg-[#f2f9ff] px-2 py-0.5 text-[11px] font-semibold text-[#097fe8]">{scene.id}</span>
-                        <span className="text-[14px] font-semibold">{scene.title ?? "Untitled Scene"}</span>
+                        <span className="text-[14px] font-semibold">{scene.title ?? "未命名场景"}</span>
                         {scene.location && <span className="text-[12px] text-[#615d59]">@ {scene.location}</span>}
                         {scene.time_of_day && <span className="text-[12px] text-[#a39e98]">{scene.time_of_day}</span>}
                       </div>
@@ -354,12 +373,12 @@ export default function ProjectDetail({ projectId, onBack }: Props) {
                               className={`rounded-[8px] border p-3 transition-colors ${isHighlighted || isLinked ? "border-[#0075de] bg-[#0075de]/5" : "border-[rgba(0,0,0,0.1)]"} ${el.inferred ? "border-l-2 border-l-[#dd5b00]" : ""} ${el.confidence < 0.7 ? "border-l-2 border-l-[#d44]" : ""}`}>
                               <div className="flex items-center gap-2 mb-1">
                                 <span className={`rounded-[4px] px-1.5 py-0.5 text-[11px] font-semibold ${el.type === "dialogue" ? "bg-[#e6f7f6] text-[#2a9d99]" : el.type === "action" ? "bg-[#f2f9ff] text-[#097fe8]" : el.type === "narration" ? "bg-[#fff3e8] text-[#dd5b00]" : "bg-[#f6f5f4] text-[#615d59]"}`}>
-                                  {el.type}
+                                  {ELEMENT_TYPE_LABELS[el.type] ?? el.type}
                                 </span>
                                 {el.character_id && <span className="text-[12px] font-medium text-[#615d59]">{charMap.get(el.character_id) ?? el.character_id}</span>}
-                                {el.parenthetical && <span className="text-[12px] text-[#a39e98] italic">({el.parenthetical})</span>}
-                                {el.inferred && <span title="AI inferred" className="inline-flex items-center"><AlertTriangle size={12} className="text-[#dd5b00]" /></span>}
-                                {el.confidence < 0.7 && <span title={`Confidence: ${el.confidence}`} className="inline-flex items-center"><AlertTriangle size={12} className="text-[#d44]" /></span>}
+                                {el.parenthetical && <span className="text-[12px] text-[#a39e98] italic">（{el.parenthetical}）</span>}
+                                {el.inferred && <span title="AI 推断" className="inline-flex items-center"><AlertTriangle size={12} className="text-[#dd5b00]" /></span>}
+                                {el.confidence < 0.7 && <span title={`置信度：${el.confidence}`} className="inline-flex items-center"><AlertTriangle size={12} className="text-[#d44]" /></span>}
                                 {el.confidence >= 0.7 && !el.inferred && <span className="inline-flex items-center"><CheckCircle size={12} className="text-[#2a9d99]" /></span>}
                                 <span className="text-[11px] text-[#a39e98] ml-auto">{Math.round(el.confidence * 100)}%</span>
                               </div>
@@ -370,7 +389,7 @@ export default function ProjectDetail({ projectId, onBack }: Props) {
                                 rows={Math.max(1, Math.ceil(el.content.length / 50))}
                               />
                               {el.source_reference && (
-                                <p className="text-[11px] text-[#a39e98] mt-1 truncate">Source: {el.source_reference.quote}</p>
+                                <p className="text-[11px] text-[#a39e98] mt-1 truncate">原文：{el.source_reference.quote}</p>
                               )}
                             </div>
                           );
@@ -384,128 +403,108 @@ export default function ProjectDetail({ projectId, onBack }: Props) {
           </div>
         )}
 
-        {/* YAML TAB */}
+        {/* YAML 预览 */}
         {activeTab === "yaml" && (
           <div className="rounded-[12px] border border-[rgba(0,0,0,0.1)] bg-[#f6f5f4] p-6 max-h-[700px] overflow-y-auto">
             {!screenplay ? (
-              <p className="text-[16px] text-[#a39e98]">Run Stage 2 to generate screenplay.</p>
+              <p className="text-[16px] text-[#a39e98]">请先运行阶段 2 生成剧本。</p>
             ) : (
               <pre className="whitespace-pre-wrap text-[14px] leading-[1.5] font-mono">{JSON.stringify(screenplay, null, 2)}</pre>
             )}
           </div>
         )}
 
-        {/* GRAPH & TIMELINE TAB */}
-        {activeTab === "graph" && (
-          <div className="space-y-6">
-            {/* Scene Timeline */}
-            <div>
-              <h3 className="text-[14px] font-semibold mb-3 text-[#615d59] flex items-center gap-2">
-                <span>Scene Timeline</span>
-                <span className="text-[12px] text-[#a39e98]">({allScenes.length} scenes)</span>
-              </h3>
-              <SceneTimeline scenes={allScenes} />
-            </div>
-
-            {/* Relationship Graph */}
-            <div>
-              <h3 className="text-[14px] font-semibold mb-3 text-[#615d59] flex items-center gap-2">
-                <GitBranch size={14} />
-                <span>Character Relationships</span>
-                <span className="text-[12px] text-[#a39e98]">({characters?.characters.length ?? 0} characters)</span>
-              </h3>
-              {characters ? (
-                <RelationshipGraph characters={characters.characters} />
-              ) : (
-                <div className="h-[400px] rounded-[12px] border border-[rgba(0,0,0,0.1)] bg-[#f6f5f4] flex items-center justify-center">
-                  <p className="text-[#a39e98]">Run Stage 1 to see character relationships</p>
-                </div>
-              )}
-            </div>
-
-            {/* Scene List (navigation) */}
-            {allScenes.length > 0 && (
-              <div>
-                <h3 className="text-[14px] font-semibold mb-3 text-[#615d59]">Scene Navigation</h3>
-                <div className="rounded-[12px] border border-[rgba(0,0,0,0.1)] bg-[#f6f5f4] p-3 max-h-[300px] overflow-y-auto">
-                  <SceneList scenes={allScenes} />
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* VALIDATION TAB */}
+        {/* 校验日志 */}
         {activeTab === "validation" && (
           <div>
             {!validationLog ? (
               <div className="rounded-[12px] border border-[rgba(0,0,0,0.1)] bg-[#f6f5f4] p-12 text-center">
                 <Shield size={48} className="mx-auto mb-4 text-[#a39e98]" />
-                <p className="text-[16px] text-[#615d59]">Run Stage 3 to validate consistency.</p>
+                <p className="text-[16px] text-[#615d59]">请先运行阶段 3 进行一致性校验。</p>
               </div>
             ) : (
               <>
-                {/* Summary badges */}
                 <div className="flex gap-2 mb-4">
                   {validationLog.error_count > 0 && (
-                    <span className="rounded-[9999px] bg-[#fde8e8] px-3 py-1 text-[12px] font-semibold text-[#d44]">
-                      {validationLog.error_count} errors
-                    </span>
+                    <span className="rounded-[9999px] bg-[#fde8e8] px-3 py-1 text-[12px] font-semibold text-[#d44]">{validationLog.error_count} 个错误</span>
                   )}
                   {validationLog.warning_count > 0 && (
-                    <span className="rounded-[9999px] bg-[#fff3e8] px-3 py-1 text-[12px] font-semibold text-[#dd5b00]">
-                      {validationLog.warning_count} warnings
-                    </span>
+                    <span className="rounded-[9999px] bg-[#fff3e8] px-3 py-1 text-[12px] font-semibold text-[#dd5b00]">{validationLog.warning_count} 个警告</span>
                   )}
                   {validationLog.info_count > 0 && (
-                    <span className="rounded-[9999px] bg-[#f2f9ff] px-3 py-1 text-[12px] font-semibold text-[#097fe8]">
-                      {validationLog.info_count} info
-                    </span>
+                    <span className="rounded-[9999px] bg-[#f2f9ff] px-3 py-1 text-[12px] font-semibold text-[#097fe8]">{validationLog.info_count} 条信息</span>
                   )}
                   {validationLog.entries.length === 0 && (
-                    <span className="rounded-[9999px] bg-[#e6f7f6] px-3 py-1 text-[12px] font-semibold text-[#2a9d99]">
-                      All checks passed
-                    </span>
+                    <span className="rounded-[9999px] bg-[#e6f7f6] px-3 py-1 text-[12px] font-semibold text-[#2a9d99]">全部通过</span>
                   )}
                 </div>
-
-                {/* Filter */}
                 <div className="flex gap-1 mb-4">
                   {(["all", "error", "warning", "info"] as const).map(f => (
                     <button key={f} onClick={() => setValidationFilter(f)}
-                      className={`rounded-[4px] px-3 py-1 text-[12px] font-medium transition-colors capitalize ${validationFilter === f ? "bg-[#0075de] text-white" : "bg-[rgba(0,0,0,0.05)] text-[#615d59] hover:bg-[rgba(0,0,0,0.08)]"}`}>
-                      {f}
+                      className={`rounded-[4px] px-3 py-1 text-[12px] font-medium transition-colors ${validationFilter === f ? "bg-[#0075de] text-white" : "bg-[rgba(0,0,0,0.05)] text-[#615d59] hover:bg-[rgba(0,0,0,0.08)]"}`}>
+                      {f === "all" ? "全部" : f === "error" ? "错误" : f === "warning" ? "警告" : "信息"}
                     </button>
                   ))}
                 </div>
-
-                {/* Entries */}
                 <div className="space-y-2">
-                  {validationLog.entries
-                    .filter(e => validationFilter === "all" || e.severity === validationFilter)
-                    .map((entry, i) => (
-                      <div key={i} className={`rounded-[8px] border p-3 ${
-                        entry.severity === "error" ? "border-[#d44]/30 bg-[#fde8e8]/30" :
-                        entry.severity === "warning" ? "border-[#dd5b00]/30 bg-[#fff3e8]/30" :
-                        "border-[#097fe8]/30 bg-[#f2f9ff]/30"
-                      }`}>
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className={`rounded-[4px] px-1.5 py-0.5 text-[11px] font-semibold ${
-                            entry.severity === "error" ? "bg-[#fde8e8] text-[#d44]" :
-                            entry.severity === "warning" ? "bg-[#fff3e8] text-[#dd5b00]" :
-                            "bg-[#f2f9ff] text-[#097fe8]"
-                          }`}>
-                            {entry.severity}
-                          </span>
-                          <span className="text-[12px] text-[#615d59] font-mono">{entry.code}</span>
-                          {entry.scene_id && <span className="text-[11px] text-[#a39e98]">{entry.scene_id}</span>}
-                          {entry.element_id && <span className="text-[11px] text-[#a39e98]">{entry.element_id}</span>}
-                        </div>
-                        <p className="text-[14px]">{entry.message}</p>
+                  {validationLog.entries.filter(e => validationFilter === "all" || e.severity === validationFilter).map((entry, i) => (
+                    <div key={i} className={`rounded-[8px] border p-3 ${
+                      entry.severity === "error" ? "border-[#d44]/30 bg-[#fde8e8]/30" :
+                      entry.severity === "warning" ? "border-[#dd5b00]/30 bg-[#fff3e8]/30" :
+                      "border-[#097fe8]/30 bg-[#f2f9ff]/30"
+                    }`}>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className={`rounded-[4px] px-1.5 py-0.5 text-[11px] font-semibold ${
+                          entry.severity === "error" ? "bg-[#fde8e8] text-[#d44]" :
+                          entry.severity === "warning" ? "bg-[#fff3e8] text-[#dd5b00]" :
+                          "bg-[#f2f9ff] text-[#097fe8]"
+                        }`}>
+                          {entry.severity === "error" ? "错误" : entry.severity === "warning" ? "警告" : "信息"}
+                        </span>
+                        <span className="text-[12px] text-[#615d59] font-mono">{entry.code}</span>
+                        {entry.scene_id && <span className="text-[11px] text-[#a39e98]">{entry.scene_id}</span>}
+                        {entry.element_id && <span className="text-[11px] text-[#a39e98]">{entry.element_id}</span>}
                       </div>
-                    ))}
+                      <p className="text-[14px]">{entry.message}</p>
+                    </div>
+                  ))}
                 </div>
               </>
+            )}
+          </div>
+        )}
+
+        {/* 图谱与时间线 */}
+        {activeTab === "graph" && (
+          <div className="space-y-6">
+            <div>
+              <h3 className="text-[14px] font-semibold mb-3 text-[#615d59] flex items-center gap-2">
+                <span>场景时间线</span>
+                <span className="text-[12px] text-[#a39e98]">（{allScenes.length} 个场景）</span>
+              </h3>
+              <SceneTimeline scenes={allScenes} />
+            </div>
+            <div>
+              <h3 className="text-[14px] font-semibold mb-3 text-[#615d59] flex items-center gap-2">
+                <GitBranch size={14} />
+                <span>人物关系图</span>
+                <span className="text-[12px] text-[#a39e98]">（{characters?.characters.length ?? 0} 个角色）</span>
+              </h3>
+              {characters ? (
+                <RelationshipGraph characters={characters.characters} />
+              ) : (
+                <div className="h-[400px] rounded-[12px] border border-[rgba(0,0,0,0.1)] bg-[#f6f5f4] flex items-center justify-center">
+                  <p className="text-[#a39e98]">请先运行阶段 1 提取角色</p>
+                </div>
+              )}
+            </div>
+            {allScenes.length > 0 && (
+              <div>
+                <h3 className="text-[14px] font-semibold mb-3 text-[#615d59]">场景导航</h3>
+                <div className="rounded-[12px] border border-[rgba(0,0,0,0.1)] bg-[#f6f5f4] p-3 max-h-[300px] overflow-y-auto">
+                  <SceneList scenes={allScenes} />
+                </div>
+              </div>
             )}
           </div>
         )}

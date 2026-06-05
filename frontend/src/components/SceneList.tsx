@@ -12,7 +12,7 @@ interface Props {
 
 export default function SceneList({ scenes, onSceneClick, highlightedScene }: Props) {
   if (scenes.length === 0) {
-    return <p className="text-[14px] text-[#a39e98] p-4">No scenes</p>;
+    return <p className="text-[14px] text-[#a39e98] p-4">暂无场景</p>;
   }
 
   return (
@@ -29,8 +29,8 @@ export default function SceneList({ scenes, onSceneClick, highlightedScene }: Pr
         >
           <div className="flex items-center gap-2">
             <span className="text-[11px] text-[#a39e98] font-mono">{scene.id}</span>
-            <span className="font-medium truncate">{scene.title ?? "Untitled"}</span>
-            <span className="text-[11px] text-[#a39e98] ml-auto">{scene.elements.length} el</span>
+            <span className="font-medium truncate">{scene.title ?? "未命名"}</span>
+            <span className="text-[11px] text-[#a39e98] ml-auto">{scene.elements.length} 元素</span>
           </div>
         </button>
       ))}

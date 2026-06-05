@@ -20,7 +20,7 @@ export default function SceneTimeline({ scenes, onSceneClick, highlightedScene }
   if (scenes.length === 0) {
     return (
       <div className="p-8 text-center text-[#a39e98]">
-        No scenes to display
+        暂无场景数据
       </div>
     );
   }
@@ -47,7 +47,7 @@ export default function SceneTimeline({ scenes, onSceneClick, highlightedScene }
                   {scene.id}
                 </span>
                 <span className="text-[13px] font-semibold truncate">
-                  {scene.title ?? "Untitled"}
+                  {scene.title ?? "未命名"}
                 </span>
               </div>
               {scene.location && (
@@ -65,7 +65,7 @@ export default function SceneTimeline({ scenes, onSceneClick, highlightedScene }
               {characterCount > 0 && (
                 <div className="flex items-center gap-1 text-[11px] text-[#a39e98]">
                   <Users size={10} />
-                  <span>{characterCount} characters</span>
+                  <span>{characterCount} 个角色</span>
                 </div>
               )}
             </button>
