@@ -66,6 +66,14 @@ async def create_project(
     return summary
 
 
+@router.delete("/projects/{project_id}")
+def delete_project(project_id: str):
+    """Delete a project."""
+    if not storage.delete_project(project_id):
+        raise HTTPException(status_code=404, detail="Project not found")
+    return {"status": "deleted", "id": project_id}
+
+
 @router.get("/projects/{project_id}", response_model=ProjectDetail)
 def get_project(project_id: str):
     """Return project detail including raw text."""

@@ -12,11 +12,18 @@ _PROVIDERS: dict[str, LLMProvider] = {
     "mock": MockProvider(),
 }
 
-# Conditionally register OpenAI provider if key is available
+# Conditionally register providers
 try:
     from app.llm.openai_compat import OpenAICompatibleProvider
 
     _PROVIDERS["openai_compatible"] = OpenAICompatibleProvider()
+except ImportError:
+    pass
+
+try:
+    from app.llm.anthropic_compat import AnthropicProvider
+
+    _PROVIDERS["anthropic"] = AnthropicProvider()
 except ImportError:
     pass
 

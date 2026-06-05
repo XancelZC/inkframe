@@ -48,8 +48,30 @@ def _write_index(index: ProjectIndex) -> None:
 
 
 def list_projects() -> list[ProjectSummary]:
-    """Return all project summaries from index.json."""
-    return _read_index().projects
+    """Return all project summaries from index.json, sorted by newest first."""
+    projects = _read_index().projects
+    projects.sort(key=lambda p: p.created_at, reverse=True)
+    return projects
+
+
+def delete_project(project_id: str) -> bool:
+    """Delete a project and its directory. Returns True if deleted."""
+    import shutil
+
+    index = _read_index()
+    original_len = len(index.projects)
+    index.projects = [p for p in index.projects if p.id != project_id]
+
+    if len(index.projects) == original_len:
+        return False
+
+    _write_index(index)
+
+    project_dir = DATA_DIR / project_id
+    if project_dir.exists():
+        shutil.rmtree(project_dir)
+
+    return True
 
 
 def create_project(
