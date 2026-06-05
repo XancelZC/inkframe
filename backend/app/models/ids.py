@@ -6,6 +6,7 @@ Format rules from PRD section "Canonical Data Contract".
 
 from __future__ import annotations
 
+import hashlib
 import re
 import time
 import unicodedata
@@ -87,11 +88,14 @@ ElementId = Annotated[
 
 
 def _slugify(text: str) -> str:
-    """Convert text to a lowercase ASCII slug."""
+    """Convert text to a lowercase ASCII slug. Supports Chinese via hash."""
     text = unicodedata.normalize("NFKD", text)
-    text = text.encode("ascii", "ignore").decode("ascii")
-    text = re.sub(r"[^a-z0-9]+", "_", text.lower().strip())
-    return text.strip("_") or "untitled"
+    ascii_text = text.encode("ascii", "ignore").decode("ascii")
+    slug = re.sub(r"[^a-z0-9]+", "_", ascii_text.lower().strip()).strip("_")
+    if not slug:
+        # Non-ASCII (e.g. Chinese): use short hash of original text
+        slug = hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
+    return slug
 
 
 def make_project_id(title: str) -> ProjectId:

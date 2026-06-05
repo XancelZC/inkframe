@@ -37,16 +37,15 @@ def run_stage3(project_id: str) -> ValidationLog:
 
     entries: list[ValidationLogEntry] = []
 
-    # Check scene continuity
+    # Check scene order (monotonically increasing, not strictly sequential)
     scene_ids = [s["id"] for s in scenes]
-    for i, sid in enumerate(scene_ids):
-        expected = f"sc_{i + 1:04d}"
-        if sid != expected:
+    for i in range(1, len(scene_ids)):
+        if scene_ids[i] <= scene_ids[i - 1]:
             entries.append(ValidationLogEntry(
                 severity=ValidationSeverity.WARNING,
-                code="scene_gap",
-                message=f"Scene ID {sid} is not sequential (expected {expected})",
-                scene_id=sid,
+                code="scene_order",
+                message=f"场景 {scene_ids[i]} 不在 {scene_ids[i-1]} 之后",
+                scene_id=scene_ids[i],
             ))
 
     # Check each scene's elements
@@ -69,11 +68,19 @@ def run_stage3(project_id: str) -> ValidationLog:
             # Check character references
             if el_type == "dialogue":
                 char_id = el.get("character_id", "")
-                if char_id and char_id not in valid_char_ids:
+                if not char_id:
+                    entries.append(ValidationLogEntry(
+                        severity=ValidationSeverity.WARNING,
+                        code="missing_character",
+                        message=f"对话元素 {el_id} 缺少角色引用",
+                        scene_id=scene_id,
+                        element_id=el_id,
+                    ))
+                elif char_id not in valid_char_ids:
                     entries.append(ValidationLogEntry(
                         severity=ValidationSeverity.ERROR,
                         code="invalid_character_ref",
-                        message=f"Element {el_id} references non-existent character {char_id}",
+                        message=f"元素 {el_id} 引用了不存在的角色 {char_id}",
                         scene_id=scene_id,
                         element_id=el_id,
                     ))

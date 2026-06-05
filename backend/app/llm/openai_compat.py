@@ -43,14 +43,16 @@ class OpenAICompatibleProvider(LLMProvider):
         client = OpenAI(api_key=api_key, base_url=base_url)
 
         system_prompt = (
-            "You are a helpful assistant. "
-            "Always respond with valid JSON matching the given schema. "
-            "Do not include any text outside the JSON object."
+            "你是一个专业的中文剧本分析助手。"
+            "所有输出内容必须使用中文（包括对话、动作描述、旁白等）。"
+            "只返回符合要求的 JSON，不要包含任何其他文字。"
         )
+
+        model = os.environ.get("OPENAI_MODEL", "") or "gpt-4o-mini"
 
         try:
             response = client.chat.completions.create(
-                model="gpt-4o-mini",
+                model=model,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": f"{prompt}\n\nSchema:\n{json.dumps(schema, indent=2)}"},
@@ -94,13 +96,16 @@ class OpenAICompatibleProvider(LLMProvider):
         client = AsyncOpenAI(api_key=api_key, base_url=base_url)
 
         system_prompt = (
-            "You are a helpful assistant. "
-            "Always respond with valid JSON matching the given schema."
+            "你是一个专业的中文剧本分析助手。"
+            "所有输出内容必须使用中文。"
+            "只返回符合要求的 JSON，不要包含任何其他文字。"
         )
+
+        model = os.environ.get("OPENAI_MODEL", "") or "gpt-4o-mini"
 
         try:
             stream = await client.chat.completions.create(
-                model="gpt-4o-mini",
+                model=model,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": f"{prompt}\n\nSchema:\n{json.dumps(schema, indent=2)}"},

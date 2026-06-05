@@ -6,7 +6,6 @@ assign stable IDs. Pure rules, no LLM calls.
 Configurable thresholds:
 - max_chapter_chars: 60000 (split chapters exceeding this)
 - chunk_chars: 4000 (chunk size for long chapters)
-- chunk_overlap_paragraphs: 1 (overlap for context continuity)
 """
 
 from __future__ import annotations
@@ -23,7 +22,6 @@ from app.storage import detect_language, get_project_dir, get_raw_text
 
 DEFAULT_MAX_CHAPTER_CHARS = 60000
 DEFAULT_CHUNK_CHARS = 4000
-DEFAULT_CHUNK_OVERLAP = 1
 
 
 def _split_into_chapters(text: str) -> list[tuple[Optional[str], str]]:
@@ -106,10 +104,9 @@ def run_stage0(
 
     chapters = []
     global_para_index = 1
+    global_chapter_index = 0
 
     for ch_index, (title, ch_content) in enumerate(chapter_splits, start=1):
-        chapter_id = make_chapter_id(ch_index)
-
         # If chapter is too long, chunk it
         if len(ch_content) > max_chapter_chars:
             # Split into paragraphs first, then group into chunks
@@ -130,10 +127,10 @@ def run_stage0(
             if current_chunk:
                 chunks.append(current_chunk)
 
-            # Create one chapter per chunk
+            # Create one chapter per chunk with unique IDs
             for chunk_index, chunk in enumerate(chunks):
-                chunk_ch_id = make_chapter_id(ch_index) if chunk_index == 0 else make_chapter_id(ch_index)
-                # For multiple chunks of same chapter, use same chapter_id
+                global_chapter_index += 1
+                chunk_ch_id = make_chapter_id(global_chapter_index)
                 paragraphs = []
                 for para_text, start, end in chunk:
                     paragraphs.append(
@@ -158,6 +155,8 @@ def run_stage0(
                     )
                 )
         else:
+            global_chapter_index += 1
+            chapter_id = make_chapter_id(global_chapter_index)
             paras_data = _split_into_paragraphs(ch_content)
             paragraphs = []
             for para_text, start, end in paras_data:

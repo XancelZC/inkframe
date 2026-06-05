@@ -40,14 +40,16 @@ class AnthropicProvider(LLMProvider):
         client = Anthropic(api_key=api_key, base_url=base_url)
 
         system_prompt = (
-            "You are a helpful assistant. "
-            "Always respond with valid JSON matching the given schema. "
-            "Do not include any text outside the JSON object."
+            "你是一个专业的中文剧本分析助手。"
+            "所有输出内容必须使用中文（包括对话、动作描述、旁白等）。"
+            "只返回符合要求的 JSON，不要包含任何其他文字。"
         )
+
+        model = os.environ.get("ANTHROPIC_MODEL", "") or "claude-sonnet-4-20250514"
 
         try:
             response = client.messages.create(
-                model="claude-sonnet-4-20250514",
+                model=model,
                 max_tokens=4096,
                 system=system_prompt,
                 messages=[
@@ -96,14 +98,17 @@ class AnthropicProvider(LLMProvider):
         client = AsyncAnthropic(api_key=api_key, base_url=base_url)
 
         system_prompt = (
-            "You are a helpful assistant. "
-            "Always respond with valid JSON matching the given schema."
+            "你是一个专业的中文剧本分析助手。"
+            "所有输出内容必须使用中文。"
+            "只返回符合要求的 JSON，不要包含任何其他文字。"
         )
+
+        model = os.environ.get("ANTHROPIC_MODEL", "") or "claude-sonnet-4-20250514"
 
         try:
             accumulated = ""
             with client.messages.stream(
-                model="claude-sonnet-4-20250514",
+                model=model,
                 max_tokens=4096,
                 system=system_prompt,
                 messages=[

@@ -68,9 +68,11 @@ def _sync_env_vars() -> None:
     if active["type"] == "openai_compatible":
         os.environ["OPENAI_API_KEY"] = active.get("api_key", "")
         os.environ["OPENAI_BASE_URL"] = active.get("base_url", "")
+        os.environ["OPENAI_MODEL"] = active.get("model", "")
     elif active["type"] == "anthropic":
         os.environ["ANTHROPIC_API_KEY"] = active.get("api_key", "")
         os.environ["ANTHROPIC_BASE_URL"] = active.get("base_url", "")
+        os.environ["ANTHROPIC_MODEL"] = active.get("model", "")
 
 
 def _get_provider_by_id(pid: str) -> Optional[dict]:
@@ -147,7 +149,8 @@ def update_provider(pid: str, req: UpdateProviderRequest):
         provider["name"] = req.name
     if req.base_url is not None:
         provider["base_url"] = req.base_url
-    if req.api_key is not None:
+    # 只有非空时才更新 api_key，防止前端空值覆盖
+    if req.api_key is not None and req.api_key.strip():
         provider["api_key"] = req.api_key
     if req.model is not None:
         provider["model"] = req.model
@@ -256,10 +259,12 @@ def test_connection(pid: str):
     if provider["type"] == "openai_compatible":
         os.environ["OPENAI_API_KEY"] = api_key
         os.environ["OPENAI_BASE_URL"] = base_url
+        os.environ["OPENAI_MODEL"] = provider.get("model", "")
         provider_id_for_llm = "openai_compatible"
     elif provider["type"] == "anthropic":
         os.environ["ANTHROPIC_API_KEY"] = api_key
         os.environ["ANTHROPIC_BASE_URL"] = base_url
+        os.environ["ANTHROPIC_MODEL"] = provider.get("model", "")
         provider_id_for_llm = "anthropic"
     else:
         return {"success": False, "error": f"不支持的协议类型: {provider['type']}"}

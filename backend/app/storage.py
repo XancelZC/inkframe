@@ -21,7 +21,7 @@ def detect_language(text: str) -> str:
     total_chars = len(text.strip())
     if total_chars == 0:
         return "zh"
-    return "zh" if chinese_chars / total_chars > 0.1 else "en"
+    return "zh" if chinese_chars / total_chars > 0.3 else "en"
 
 DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "projects"
 INDEX_FILE = DATA_DIR / "index.json"

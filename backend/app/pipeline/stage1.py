@@ -18,6 +18,17 @@ from app.models.ids import make_character_id
 from app.storage import get_project_dir
 
 
+# 常见非人名的两字词，用于过滤 fallback 正则的误匹配
+_ZH_STOPWORDS = {
+    "他们", "她们", "我们", "你们", "自己", "什么", "怎么", "这里", "那里",
+    "一个", "这个", "那个", "可以", "不是", "没有", "知道", "已经", "因为",
+    "所以", "但是", "如果", "只是", "还是", "就是", "不过", "而且", "虽然",
+    "然后", "现在", "时候", "出来", "起来", "开始", "觉得", "发现", "可能",
+    "应该", "这样", "那样", "一些", "一下", "一切", "为了", "之间", "以后",
+    "以前", "这些", "那些", "许多", "大家", "别人", "不要", "不会", "不能",
+}
+
+
 def _extract_candidate_names(text: str, language: str) -> list[str]:
     """Extract candidate character names using NLP heuristics."""
     candidates = set()
@@ -32,9 +43,11 @@ def _extract_candidate_names(text: str, language: str) -> list[str]:
                 if flag in ("nr", "nrt") and len(word) >= 2:
                     candidates.add(word)
         except ImportError:
-            # Fallback: regex for Chinese names (2-3 characters)
+            # Fallback: regex for Chinese names (2-3 characters), filter stopwords
             for match in re.finditer(r"[一-鿿]{2,3}", text):
-                candidates.add(match.group())
+                word = match.group()
+                if word not in _ZH_STOPWORDS:
+                    candidates.add(word)
     else:
         # English: capitalized words that appear multiple times
         words = re.findall(r"\b[A-Z][a-z]+\b", text)
@@ -107,17 +120,22 @@ def run_stage1(project_id: str, provider_id: str = "mock") -> CharacterTable:
     # Extract candidate names
     candidates = _extract_candidate_names(all_text, language)
 
-    # Build prompt
-    prompt = f"""Extract all characters from this novel text.
-Candidate names found: {', '.join(candidates) if candidates else 'none detected'}
+    # Build prompt — 必须包含原文，否则 LLM 会编造角色
+    text_excerpt = all_text[:8000]  # 限制长度避免超 token
 
-For each character, provide:
-- name: the character's primary name
-- aliases: other names or titles used for this character
-- description: a brief description of who they are
-- relationships: connections to other characters
+    prompt = f"""你是一个专业的剧本分析助手。请从以下小说原文中提取所有出现过的角色。
 
-Return JSON matching this schema: {json.dumps(CHARACTER_EXTRACTION_SCHEMA)}"""
+重要规则：
+- 只提取原文中明确出现的人物，不要编造
+- 如果原文中没有明确的人物，返回空数组
+- 角色名必须与原文一致
+
+候选人物名（仅供参考，可能不准确）：{', '.join(candidates) if candidates else '无'}
+
+原文：
+{text_excerpt}
+
+请提取角色信息，返回 JSON。"""
 
     # Call LLM
     result = provider.generate_json(prompt, CHARACTER_EXTRACTION_SCHEMA)
@@ -148,18 +166,16 @@ Return JSON matching this schema: {json.dumps(CHARACTER_EXTRACTION_SCHEMA)}"""
             if not target_name:
                 continue
 
-            # Find target character ID
+            # Find target character ID — 只做精确匹配，不瞎连
             target_id = name_to_id.get(target_name)
             if not target_id:
-                # Try fuzzy match
+                # 尝试模糊匹配：包含关系
                 for other in characters:
                     if other.name == target_name or target_name in other.aliases:
                         target_id = other.id
                         break
-            if not target_id and len(characters) > 1:
-                # Default to first other character
-                target_id = next(c.id for c in characters if c.id != characters[i].id)
 
+            # 如果还是匹配不到，跳过这条关系（不默认连到其他角色）
             if target_id:
                 relationships.append(
                     Relationship(

@@ -172,6 +172,8 @@ def process_project(project_id: str, from_stage: str = "preprocessing"):
         raise HTTPException(status_code=400, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=f"LLM 调用失败: {e}")
 
 
 @router.get("/projects/{project_id}/status")
