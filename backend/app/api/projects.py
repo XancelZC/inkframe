@@ -6,13 +6,16 @@ import json
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from app.models.project import ProjectDetail, ProjectSummary
 from app.models.character import CharacterTable
+from app.models.status import PipelineStatus
 from app.pipeline.stage0 import run_stage0
 from app.pipeline.stage1 import run_stage1
 from app.pipeline.stage2 import run_stage2
+from app.pipeline.progress import ProgressTracker, get_status
 from app import storage
 
 router = APIRouter(tags=["projects"])
@@ -119,6 +122,35 @@ def process_project(project_id: str, from_stage: str = "preprocessing"):
         raise HTTPException(status_code=400, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/projects/{project_id}/status")
+def get_project_status(project_id: str):
+    """Return current pipeline status."""
+    projects = storage.list_projects()
+    if not any(p.id == project_id for p in projects):
+        raise HTTPException(status_code=404, detail="Project not found")
+    return get_status(project_id)
+
+
+@router.get("/projects/{project_id}/events")
+async def project_events(project_id: str):
+    """SSE endpoint for pipeline progress events."""
+    projects = storage.list_projects()
+    if not any(p.id == project_id for p in projects):
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    tracker = ProgressTracker(project_id)
+
+    async def generate():
+        async for event in tracker.event_stream():
+            yield f"data: {event.model_dump_json()}\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.get("/projects/{project_id}/characters")
