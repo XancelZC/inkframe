@@ -18,7 +18,7 @@ interface Props {
 export default function RelationshipGraph({ characters, onNodeClick }: Props) {
   const { nodes, edges } = useMemo(() => {
     const angleStep = (2 * Math.PI) / Math.max(characters.length, 1);
-    const radius = 150;
+    const radius = 180;
 
     const nodes: Node[] = characters.map((char, i) => ({
       id: char.id,
@@ -31,7 +31,14 @@ export default function RelationshipGraph({ characters, onNodeClick }: Props) {
           <div className="text-center">
             <div className="text-[14px] font-semibold">{char.name}</div>
             {char.description && (
-              <div className="text-[11px] text-[#615d59] max-w-[120px] truncate">
+              <div className="text-[11px] text-[#615d59] max-w-[160px] leading-tight"
+                style={{
+                  display: "-webkit-box",
+                  WebkitLineClamp: 3,
+                  WebkitBoxOrient: "vertical",
+                  overflow: "hidden",
+                }}
+                title={char.description}>
                 {char.description}
               </div>
             )}
@@ -83,7 +90,7 @@ export default function RelationshipGraph({ characters, onNodeClick }: Props) {
   }
 
   return (
-    <div className="h-[400px] rounded-[12px] border border-[rgba(0,0,0,0.1)] bg-[#f6f5f4]">
+    <div className="h-[500px] rounded-[12px] border border-[rgba(0,0,0,0.1)] bg-[#f6f5f4]">
       <ReactFlow
         nodes={nodes}
         edges={edges}

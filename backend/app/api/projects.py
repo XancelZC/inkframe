@@ -66,6 +66,14 @@ async def create_project(
     return summary
 
 
+@router.put("/projects/{project_id}")
+def update_project(project_id: str, title: Optional[str] = None):
+    """Update project title."""
+    if title and not storage.update_project_title(project_id, title):
+        raise HTTPException(status_code=404, detail="项目不存在")
+    return {"status": "saved"}
+
+
 @router.delete("/projects/{project_id}")
 def delete_project(project_id: str):
     """Delete a project."""
@@ -85,6 +93,7 @@ def get_project(project_id: str):
     raw_text = storage.get_raw_text(project_id)
     return ProjectDetail(
         id=summary.id,
+        novel_id=summary.novel_id,
         title=summary.title,
         source_language=summary.source_language,
         created_at=summary.created_at,
