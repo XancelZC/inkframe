@@ -135,6 +135,18 @@ export default function ProjectDetail({ projectId, onBack }: Props) {
     } finally { setProcessing(false); }
   };
 
+  const handleRunAll = async () => {
+    setProcessing(true);
+    try {
+      const stages = ["preprocessing", "character_extraction", "scene_synthesis", "validation"];
+      for (const stage of stages) {
+        const res = await fetch(`/api/projects/${projectId}/process?from_stage=${stage}`, { method: "POST" });
+        if (!res.ok) break;
+      }
+      loadAll();
+    } finally { setProcessing(false); }
+  };
+
   const handleSaveScreenplay = async () => {
     if (!screenplay) return;
     await fetch(`/api/projects/${projectId}/screenplay`, {
@@ -201,16 +213,21 @@ export default function ProjectDetail({ projectId, onBack }: Props) {
               </button>
               {showRunMenu && (
                 <div className="absolute right-0 top-full mt-1 w-56 rounded-[8px] border border-[rgba(0,0,0,0.1)] bg-white shadow-[rgba(0,0,0,0.1)_0px_4px_12px] z-50">
+                  <button onClick={() => { handleRunAll(); setShowRunMenu(false); }} disabled={processing}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-[13px] text-left font-medium text-[#0075de] hover:bg-[#f2f9ff] disabled:opacity-40 transition-colors rounded-t-[8px] border-b border-[rgba(0,0,0,0.1)]">
+                    <Play size={14} />
+                    一键运行全部阶段
+                  </button>
                   {[
-                    { stage: "preprocessing", label: "从头运行（阶段 0）", icon: Play, enabled: true },
-                    { stage: "character_extraction", label: "从阶段 1 重跑", icon: Users, enabled: !!stageResult },
-                    { stage: "scene_synthesis", label: "从阶段 2 重跑", icon: FileText, enabled: !!characters },
-                    { stage: "validation", label: "从阶段 3 重跑", icon: Shield, enabled: !!screenplay },
+                    { stage: "preprocessing", label: "阶段 0：文本预处理", icon: Play, enabled: true },
+                    { stage: "character_extraction", label: "阶段 1：角色提取", icon: Users, enabled: !!stageResult },
+                    { stage: "scene_synthesis", label: "阶段 2：场景合成", icon: FileText, enabled: !!characters },
+                    { stage: "validation", label: "阶段 3：一致性校验", icon: Shield, enabled: !!screenplay },
                   ].map(item => (
                     <button key={item.stage}
                       onClick={() => { handleRunStage(item.stage); setShowRunMenu(false); }}
                       disabled={!item.enabled || processing}
-                      className="w-full flex items-center gap-2 px-3 py-2 text-[13px] text-left hover:bg-[#f6f5f4] disabled:opacity-40 disabled:cursor-not-allowed transition-colors first:rounded-t-[8px] last:rounded-b-[8px]">
+                      className="w-full flex items-center gap-2 px-3 py-2 text-[13px] text-left hover:bg-[#f6f5f4] disabled:opacity-40 disabled:cursor-not-allowed transition-colors last:rounded-b-[8px]">
                       <item.icon size={14} />
                       {item.label}
                     </button>

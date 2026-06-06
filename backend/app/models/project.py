@@ -17,6 +17,7 @@ class ProjectSummary(BaseModel):
     """Summary stored in index.json for the project list."""
 
     id: ProjectId
+    novel_id: Optional[str] = None  # 所属小说 ID，None 表示独立项目
     title: str
     source_language: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -33,6 +34,7 @@ class ProjectDetail(BaseModel):
     """Full project detail returned by GET /api/projects/{id}."""
 
     id: ProjectId
+    novel_id: Optional[str] = None
     title: str
     source_language: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

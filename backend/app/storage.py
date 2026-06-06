@@ -1,6 +1,7 @@
 """File-backed project storage.
 
 MVP uses data/projects/ directory with index.json for project list.
+Novels are stored in data/novels/ with their own index.
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ from pathlib import Path
 from typing import Optional
 
 from app.models.project import ProjectIndex, ProjectSummary
+from app.models.novel import NovelIndex, NovelSummary
 from app.models.ids import make_project_id
 
 
@@ -25,6 +27,9 @@ def detect_language(text: str) -> str:
 
 DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "projects"
 INDEX_FILE = DATA_DIR / "index.json"
+
+NOVELS_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "novels"
+NOVELS_INDEX_FILE = NOVELS_DIR / "index.json"
 
 
 def _ensure_data_dir() -> None:
@@ -78,6 +83,7 @@ def create_project(
     title: str,
     source_language: Optional[str] = None,
     raw_text: Optional[str] = None,
+    novel_id: Optional[str] = None,
 ) -> ProjectSummary:
     """Create a new project directory and add it to the index."""
     project_id = make_project_id(title)
@@ -91,6 +97,7 @@ def create_project(
     now = datetime.now(timezone.utc)
     summary = ProjectSummary(
         id=project_id,
+        novel_id=novel_id,
         title=title,
         source_language=source_language,
         created_at=now,
@@ -115,3 +122,104 @@ def get_raw_text(project_id: str) -> Optional[str]:
     if not raw_file.exists():
         return None
     return raw_file.read_text(encoding="utf-8")
+
+
+# ── Novel storage ─────────────────────────────────────────────────
+
+
+def _ensure_novels_dir() -> None:
+    NOVELS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _read_novel_index() -> NovelIndex:
+    _ensure_novels_dir()
+    if not NOVELS_INDEX_FILE.exists():
+        return NovelIndex()
+    data = json.loads(NOVELS_INDEX_FILE.read_text(encoding="utf-8"))
+    return NovelIndex.model_validate(data)
+
+
+def _write_novel_index(index: NovelIndex) -> None:
+    _ensure_novels_dir()
+    NOVELS_INDEX_FILE.write_text(
+        index.model_dump_json(indent=2),
+        encoding="utf-8",
+    )
+
+
+def list_novels() -> list[NovelSummary]:
+    """Return all novels, newest first."""
+    novels = _read_novel_index().novels
+    novels.sort(key=lambda n: n.updated_at, reverse=True)
+    return novels
+
+
+def create_novel(title: str, language: str = "zh") -> NovelSummary:
+    """Create a new novel."""
+    novel = NovelSummary(title=title, language=language)
+    index = _read_novel_index()
+    index.novels.append(novel)
+    _write_novel_index(index)
+    return novel
+
+
+def get_novel(novel_id: str) -> Optional[NovelSummary]:
+    """Get a novel by ID."""
+    index = _read_novel_index()
+    return next((n for n in index.novels if n.id == novel_id), None)
+
+
+def delete_novel(novel_id: str) -> bool:
+    """Delete a novel and all its chapters."""
+    import shutil
+
+    index = _read_novel_index()
+    original_len = len(index.novels)
+    index.novels = [n for n in index.novels if n.id != novel_id]
+
+    if len(index.novels) == original_len:
+        return False
+
+    _write_novel_index(index)
+
+    # Delete all chapters belonging to this novel
+    projects = list_projects()
+    for p in projects:
+        if p.novel_id == novel_id:
+            delete_project(p.id)
+
+    return True
+
+
+def list_projects_by_novel(novel_id: str) -> list[ProjectSummary]:
+    """Return all projects belonging to a novel, sorted by created_at."""
+    projects = [p for p in list_projects() if p.novel_id == novel_id]
+    projects.sort(key=lambda p: p.created_at)
+    return projects
+
+
+def update_novel(novel_id: str, title: Optional[str] = None, language: Optional[str] = None) -> bool:
+    """Update a novel's title or language. Returns True if found."""
+    index = _read_novel_index()
+    novel = next((n for n in index.novels if n.id == novel_id), None)
+    if not novel:
+        return False
+    if title is not None and title.strip():
+        novel.title = title.strip()
+    if language is not None:
+        novel.language = language
+    novel.updated_at = datetime.now(timezone.utc)
+    _write_novel_index(index)
+    return True
+
+
+def update_project_title(project_id: str, title: str) -> bool:
+    """Update a project's title. Returns True if found."""
+    index = _read_index()
+    project = next((p for p in index.projects if p.id == project_id), None)
+    if not project:
+        return False
+    project.title = title.strip()
+    project.updated_at = datetime.now(timezone.utc)
+    _write_index(index)
+    return True
