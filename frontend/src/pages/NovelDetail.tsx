@@ -1,5 +1,12 @@
 import { useEffect, useState, useRef } from "react";
 import { ArrowLeft, Plus, FileText, Loader2, Trash2, X, Check, Pencil, Upload, Download } from "lucide-react";
+import {
+  appendImportFiles,
+  collectDroppedTextFiles,
+  naturalComparePath,
+  textFilesFromFileList,
+  type TextImportFile,
+} from "../lib/importFiles";
 
 interface Chapter {
   id: string;
@@ -25,6 +32,14 @@ interface Props {
   onSelectChapter: (chapterId: string) => void;
 }
 
+interface ChapterImportResult {
+  created_count: number;
+  failed_count: number;
+  ignored_count: number;
+  created_chapters: { id: string; title: string; path: string; process_error: string | null }[];
+  failed_files: { path: string; reason: string }[];
+}
+
 export default function NovelDetail({ novelId, onBack, onSelectChapter }: Props) {
   const [novel, setNovel] = useState<NovelDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -32,6 +47,10 @@ export default function NovelDetail({ novelId, onBack, onSelectChapter }: Props)
   const [chapterTitle, setChapterTitle] = useState("");
   const [chapterText, setChapterText] = useState("");
   const [chapterFile, setChapterFile] = useState<File | null>(null);
+  const [chapterImportFiles, setChapterImportFiles] = useState<TextImportFile[]>([]);
+  const [autoProcessImported, setAutoProcessImported] = useState(false);
+  const [draggingImport, setDraggingImport] = useState(false);
+  const [chapterImportResult, setChapterImportResult] = useState<ChapterImportResult | null>(null);
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
@@ -65,34 +84,91 @@ export default function NovelDetail({ novelId, onBack, onSelectChapter }: Props)
     loadNovel();
   };
 
+  const resetAddChapterForm = () => {
+    setChapterTitle("");
+    setChapterText("");
+    setChapterFile(null);
+    setChapterImportFiles([]);
+    setAutoProcessImported(false);
+    setDraggingImport(false);
+    setChapterImportResult(null);
+    setAddError("");
+  };
+
+  const closeAddChapter = () => {
+    resetAddChapterForm();
+    setShowAddChapter(false);
+  };
+
+  const setSelectedImportFiles = (entries: TextImportFile[]) => {
+    const sorted = entries.sort((a, b) => naturalComparePath(a.relativePath, b.relativePath));
+    setChapterImportFiles(sorted);
+    setChapterFile(sorted[0]?.file ?? null);
+    setChapterImportResult(null);
+    if (sorted.length > 0) {
+      setChapterText("");
+      setAddError("");
+      if (sorted.length === 1 && !chapterTitle.trim()) {
+        setChapterTitle(sorted[0].file.name.replace(/\.(txt|md)$/i, ""));
+      }
+    } else {
+      setAddError("没有找到可导入的 .txt 或 .md 文件");
+    }
+  };
+
+  const handleImportDrop = async (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setDraggingImport(false);
+    setSelectedImportFiles(await collectDroppedTextFiles(event.dataTransfer));
+  };
+
   const handleAddChapter = async () => {
-    if (!chapterTitle.trim()) { setAddError("请输入章节标题"); return; }
-    if (!chapterText.trim() && !chapterFile) { setAddError("请粘贴文本或上传文件"); return; }
+    const isBatchImport = chapterImportFiles.length > 0;
+    if (!isBatchImport && !chapterTitle.trim()) { setAddError("请输入章节标题"); return; }
+    if (!isBatchImport && !chapterText.trim() && !chapterFile) { setAddError("请粘贴文本或上传文件"); return; }
     setAdding(true);
     setAddError("");
+    setChapterImportResult(null);
     try {
-      const formData = new FormData();
-      formData.append("title", chapterTitle.trim());
-      if (chapterFile) {
-        formData.append("file", chapterFile);
-      } else if (chapterText.trim()) {
-        formData.append("text", chapterText.trim());
-      }
-      const res = await fetch(`/api/novels/${novelId}/chapters`, { method: "POST", body: formData });
+      const res = isBatchImport ? await importChapterFiles() : await createSingleChapter();
       if (!res.ok) {
         const data = await res.json();
         throw new Error(data.detail || "创建失败");
       }
-      setChapterTitle("");
-      setChapterText("");
-      setChapterFile(null);
-      setShowAddChapter(false);
+      const data = await res.json();
       loadNovel();
+      if (isBatchImport) {
+        setChapterImportResult(data);
+        if (data.failed_count === 0) {
+          closeAddChapter();
+        }
+      } else {
+        closeAddChapter();
+      }
     } catch (e) {
       setAddError(e instanceof Error ? e.message : "创建失败");
     } finally {
       setAdding(false);
     }
+  };
+
+  const createSingleChapter = () => {
+    const formData = new FormData();
+    formData.append("title", chapterTitle.trim());
+    if (chapterFile) {
+      formData.append("file", chapterFile);
+    } else if (chapterText.trim()) {
+      formData.append("text", chapterText.trim());
+    }
+    return fetch(`/api/novels/${novelId}/chapters`, { method: "POST", body: formData });
+  };
+
+  const importChapterFiles = () => {
+    const formData = new FormData();
+    formData.append("auto_process", String(autoProcessImported));
+    appendImportFiles(formData, chapterImportFiles);
+    return fetch(`/api/novels/${novelId}/chapters/import`, { method: "POST", body: formData });
   };
 
   const handleExportYaml = async () => {
@@ -243,26 +319,31 @@ export default function NovelDetail({ novelId, onBack, onSelectChapter }: Props)
 
       {/* 新建章节弹窗 */}
       {showAddChapter && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setShowAddChapter(false)}>
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={closeAddChapter}>
           <div className="rounded-[12px] bg-white w-[520px] shadow-2xl" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-4 border-b border-[rgba(0,0,0,0.1)]">
               <h2 className="text-[18px] font-semibold">新建章节</h2>
-              <button onClick={() => setShowAddChapter(false)} className="text-[#615d59] hover:text-[rgba(0,0,0,0.95)]">
+              <button onClick={closeAddChapter} className="text-[#615d59] hover:text-[rgba(0,0,0,0.95)]">
                 <X size={20} />
               </button>
             </div>
             <div className="px-6 py-5 space-y-4">
-              <div>
+              <div className={chapterImportFiles.length > 0 ? "opacity-50" : ""}>
                 <label className="block text-[13px] font-medium mb-1.5">章节标题</label>
                 <input type="text" value={chapterTitle} onChange={e => setChapterTitle(e.target.value)}
                   placeholder="例如：第一章 祥子进城"
-                  className="w-full rounded-[4px] border border-[#dddddd] px-3 py-2 text-[14px] outline-none focus:border-[#097fe8] transition-all" autoFocus />
+                  disabled={chapterImportFiles.length > 0}
+                  className="w-full rounded-[4px] border border-[#dddddd] px-3 py-2 text-[14px] outline-none focus:border-[#097fe8] disabled:bg-[#f6f5f4] transition-all" autoFocus />
+                {chapterImportFiles.length > 0 && (
+                  <p className="mt-1 text-[12px] text-[#a39e98]">导入文件时会按文件名生成章节标题。</p>
+                )}
               </div>
-              <div>
+              <div className={chapterImportFiles.length > 0 ? "opacity-50" : ""}>
                 <label className="block text-[13px] font-medium mb-1.5">小说文本</label>
-                <textarea value={chapterText} onChange={e => { setChapterText(e.target.value); if (e.target.value) setChapterFile(null); }}
+                <textarea value={chapterText} onChange={e => { setChapterText(e.target.value); if (e.target.value) { setChapterFile(null); setChapterImportFiles([]); } }}
                   placeholder="粘贴章节文本..." rows={8}
-                  className="w-full rounded-[4px] border border-[#dddddd] px-3 py-2 text-[14px] outline-none focus:border-[#097fe8] transition-all resize-y" />
+                  disabled={chapterImportFiles.length > 0}
+                  className="w-full rounded-[4px] border border-[#dddddd] px-3 py-2 text-[14px] outline-none focus:border-[#097fe8] disabled:bg-[#f6f5f4] transition-all resize-y" />
               </div>
 
               <div className="flex items-center gap-4">
@@ -272,34 +353,85 @@ export default function NovelDetail({ novelId, onBack, onSelectChapter }: Props)
               </div>
 
               <div>
-                <input ref={fileRef} type="file" accept=".txt,.md" className="hidden"
+                <input ref={fileRef} type="file" accept=".txt,.md" multiple className="hidden"
                   onChange={e => {
-                    const f = e.target.files?.[0] ?? null;
-                    setChapterFile(f);
-                    if (f) {
-                      setChapterText("");
-                      // 自动用文件名填充标题（去掉扩展名）
-                      if (!chapterTitle.trim()) {
-                        const name = f.name.replace(/\.(txt|md)$/i, "");
-                        setChapterTitle(name);
-                      }
-                    }
+                    setSelectedImportFiles(textFilesFromFileList(e.target.files ?? []));
                   }} />
-                <button onClick={() => fileRef.current?.click()}
-                  className="w-full rounded-[12px] border border-[rgba(0,0,0,0.1)] bg-[#f6f5f4] p-4 text-center hover:bg-[#ebeaea] transition-colors">
+                <div
+                  onDragOver={(event) => {
+                    event.preventDefault();
+                    setDraggingImport(true);
+                  }}
+                  onDragLeave={() => setDraggingImport(false)}
+                  onDrop={handleImportDrop}
+                  className={`w-full rounded-[12px] border border-dashed p-4 text-center transition-colors ${
+                    draggingImport ? "border-[#0075de] bg-[#f2f9ff]" : "border-[rgba(0,0,0,0.1)] bg-[#f6f5f4]"
+                  }`}
+                >
                   <Upload size={20} className="mx-auto mb-1.5 text-[#615d59]" />
-                  <p className="text-[14px] text-[#615d59]">{chapterFile ? chapterFile.name : "上传 .txt 文件"}</p>
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => fileRef.current?.click()}
+                    className="rounded-[4px] bg-white px-3 py-1.5 text-[13px] font-medium text-[#615d59] hover:bg-[#ebeaea] transition-colors"
+                  >
+                    选择 .txt/.md 文件
+                  </button>
+                  <p className="mt-2 text-[12px] text-[#615d59]">也可以把文件或文件夹拖到这里</p>
+                </div>
+                {chapterImportFiles.length > 0 && (
+                  <div className="mt-2 max-h-[120px] overflow-auto rounded-[6px] border border-[rgba(0,0,0,0.1)] bg-white">
+                    {chapterImportFiles.slice(0, 20).map((entry) => (
+                      <div key={entry.relativePath} className="flex items-center gap-2 px-3 py-1.5 text-[12px] text-[#615d59]">
+                        <FileText size={12} className="text-[#a39e98]" />
+                        <span className="truncate">{entry.relativePath}</span>
+                      </div>
+                    ))}
+                    {chapterImportFiles.length > 20 && <p className="px-3 py-1.5 text-[12px] text-[#a39e98]">还有 {chapterImportFiles.length - 20} 个文件</p>}
+                  </div>
+                )}
               </div>
+
+              {chapterImportFiles.length > 0 && (
+                <label className="flex items-center gap-2 text-[13px] text-[#615d59]">
+                  <input
+                    type="checkbox"
+                    checked={autoProcessImported}
+                    onChange={(event) => setAutoProcessImported(event.target.checked)}
+                    className="h-4 w-4"
+                  />
+                  导入后自动开始处理
+                </label>
+              )}
+
               {addError && <p className="rounded-[4px] bg-[#fde8e8] px-3 py-2 text-[13px] text-[#d44]">{addError}</p>}
+
+              {chapterImportResult && (
+                <div className="rounded-[8px] border border-[rgba(0,0,0,0.1)] bg-[#f6f5f4] p-3 text-[13px]">
+                  <p className="font-medium">已导入 {chapterImportResult.created_count} 章，失败 {chapterImportResult.failed_count} 个。</p>
+                  {chapterImportResult.failed_files.length > 0 && (
+                    <div className="mt-2 space-y-1 text-[#d44]">
+                      {chapterImportResult.failed_files.slice(0, 5).map((file) => (
+                        <p key={file.path} className="truncate">{file.path}：{file.reason}</p>
+                      ))}
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={closeAddChapter}
+                    className="mt-3 rounded-[4px] bg-[#0075de] px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-[#005bab] transition-colors"
+                  >
+                    完成
+                  </button>
+                </div>
+              )}
             </div>
             <div className="flex justify-end gap-3 px-6 py-4 border-t border-[rgba(0,0,0,0.1)]">
-              <button onClick={() => setShowAddChapter(false)}
+              <button onClick={closeAddChapter}
                 className="rounded-[4px] px-4 py-2 text-[14px] font-medium bg-[rgba(0,0,0,0.05)] hover:bg-[rgba(0,0,0,0.08)] transition-colors">取消</button>
               <button onClick={handleAddChapter} disabled={adding}
                 className="rounded-[4px] px-4 py-2 text-[14px] font-semibold text-white bg-[#0075de] hover:bg-[#005bab] disabled:opacity-50 transition-colors inline-flex items-center gap-2">
                 {adding && <Loader2 size={14} className="animate-spin" />}
-                添加章节
+                {chapterImportFiles.length > 0 ? "导入章节" : "添加章节"}
               </button>
             </div>
           </div>
