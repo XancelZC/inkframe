@@ -29,6 +29,10 @@ class CreateProjectRequest(BaseModel):
     text: Optional[str] = None
 
 
+class SourceTextUpdateRequest(BaseModel):
+    raw_text: str
+
+
 @router.get("/projects", response_model=list[ProjectSummary])
 def list_projects():
     """Return all projects."""
@@ -72,6 +76,28 @@ def update_project(project_id: str, title: Optional[str] = None):
     if title and not storage.update_project_title(project_id, title):
         raise HTTPException(status_code=404, detail="项目不存在")
     return {"status": "saved"}
+
+
+@router.put("/projects/{project_id}/source", response_model=ProjectDetail)
+def update_project_source(project_id: str, data: SourceTextUpdateRequest):
+    """Update project source text and invalidate generated pipeline outputs."""
+    raw_text = data.raw_text
+    if not raw_text.strip():
+        raise HTTPException(status_code=400, detail="No text content provided")
+
+    summary = storage.update_project_raw_text(project_id, raw_text)
+    if summary is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    return ProjectDetail(
+        id=summary.id,
+        novel_id=summary.novel_id,
+        title=summary.title,
+        source_language=summary.source_language,
+        created_at=summary.created_at,
+        updated_at=summary.updated_at,
+        raw_text=raw_text,
+    )
 
 
 @router.delete("/projects/{project_id}")

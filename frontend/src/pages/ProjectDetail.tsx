@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from "react";
-import { ArrowLeft, Play, ChevronDown, ChevronRight, Users, FileText, AlertTriangle, CheckCircle, Download, Shield, GitBranch, RefreshCw } from "lucide-react";
+import { ArrowLeft, Play, ChevronDown, ChevronRight, Users, FileText, AlertTriangle, CheckCircle, Download, Shield, GitBranch, RefreshCw, Save, Undo2, Redo2 } from "lucide-react";
 import RelationshipGraph from "../components/RelationshipGraph";
 import SceneTimeline from "../components/SceneTimeline";
 import SceneList from "../components/SceneList";
@@ -85,6 +85,10 @@ interface Props {
 
 type Tab = "source" | "characters" | "screenplay" | "yaml" | "validation" | "graph";
 
+const HISTORY_LIMIT = 50;
+
+const cloneScreenplay = (value: Screenplay): Screenplay => JSON.parse(JSON.stringify(value)) as Screenplay;
+
 const ELEMENT_TYPE_LABELS: Record<string, string> = {
   dialogue: "对话",
   action: "动作",
@@ -125,6 +129,13 @@ export default function ProjectDetail({ projectId, onBack }: Props) {
   const [validationLog, setValidationLog] = useState<ValidationLog | null>(null);
   const [validationFilter, setValidationFilter] = useState<"all" | "error" | "warning" | "info">("all");
   const [showRunMenu, setShowRunMenu] = useState(false);
+  const [sourceDraft, setSourceDraft] = useState("");
+  const [sourceSavedText, setSourceSavedText] = useState("");
+  const [savingSource, setSavingSource] = useState(false);
+  const [sourceHistory, setSourceHistory] = useState<string[]>([]);
+  const [sourceFuture, setSourceFuture] = useState<string[]>([]);
+  const [screenplayHistory, setScreenplayHistory] = useState<Screenplay[]>([]);
+  const [screenplayFuture, setScreenplayFuture] = useState<Screenplay[]>([]);
   const sourceRef = useRef<HTMLDivElement>(null);
   const screenplayRef = useRef<HTMLDivElement>(null);
   const syncingScrollRef = useRef(false);
@@ -132,11 +143,26 @@ export default function ProjectDetail({ projectId, onBack }: Props) {
   const elementRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const loadAll = () => {
-    fetch(`/api/projects/${projectId}`).then(r => r.json()).then(d => { setProject(d); setLoading(false); }).catch(() => setLoading(false));
-    fetch(`/api/projects/${projectId}/stages/preprocessing`).then(r => r.ok ? r.json() : null).then(d => { if (d) setStageResult(d); }).catch(() => {});
-    fetch(`/api/projects/${projectId}/characters`).then(r => r.ok ? r.json() : null).then(d => { if (d) setCharacters(d); }).catch(() => {});
-    fetch(`/api/projects/${projectId}/screenplay`).then(r => r.ok ? r.json() : null).then(d => { if (d) setScreenplay(d); }).catch(() => {});
-    fetch(`/api/projects/${projectId}/validation`).then(r => r.ok ? r.json() : null).then(d => { if (d) setValidationLog(d); }).catch(() => {});
+    fetch(`/api/projects/${projectId}`).then(r => r.json()).then(d => {
+      setProject(d);
+      setSourceDraft(d.raw_text ?? "");
+      setSourceSavedText(d.raw_text ?? "");
+      setSourceHistory([]);
+      setSourceFuture([]);
+      setLoading(false);
+    }).catch(() => setLoading(false));
+    fetch(`/api/projects/${projectId}/stages/preprocessing`).then(r => r.ok ? r.json() : null).then(d => { setStageResult(d); }).catch(() => setStageResult(null));
+    fetch(`/api/projects/${projectId}/characters`).then(r => r.ok ? r.json() : null).then(d => { setCharacters(d); }).catch(() => setCharacters(null));
+    fetch(`/api/projects/${projectId}/screenplay`).then(r => r.ok ? r.json() : null).then(d => {
+      setScreenplay(d);
+      setScreenplayHistory([]);
+      setScreenplayFuture([]);
+    }).catch(() => {
+      setScreenplay(null);
+      setScreenplayHistory([]);
+      setScreenplayFuture([]);
+    });
+    fetch(`/api/projects/${projectId}/validation`).then(r => r.ok ? r.json() : null).then(d => { setValidationLog(d); }).catch(() => setValidationLog(null));
   };
 
   useEffect(() => { loadAll(); }, [projectId]);
@@ -170,11 +196,89 @@ export default function ProjectDetail({ projectId, onBack }: Props) {
     });
   };
 
+  const handleSourceChange = (value: string) => {
+    setSourceHistory(history => [...history.slice(-(HISTORY_LIMIT - 1)), sourceDraft]);
+    setSourceFuture([]);
+    setSourceDraft(value);
+  };
+
+  const handleUndoSource = () => {
+    setSourceHistory(history => {
+      if (history.length === 0) return history;
+      const previous = history[history.length - 1];
+      setSourceFuture(future => [sourceDraft, ...future].slice(0, HISTORY_LIMIT));
+      setSourceDraft(previous);
+      return history.slice(0, -1);
+    });
+  };
+
+  const handleRedoSource = () => {
+    setSourceFuture(future => {
+      if (future.length === 0) return future;
+      const next = future[0];
+      setSourceHistory(history => [...history.slice(-(HISTORY_LIMIT - 1)), sourceDraft]);
+      setSourceDraft(next);
+      return future.slice(1);
+    });
+  };
+
+  const handleSaveSource = async () => {
+    if (!sourceDraft.trim()) return;
+
+    setSavingSource(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/source`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ raw_text: sourceDraft }),
+      });
+      if (!res.ok) return;
+      const updated = await res.json();
+      setProject(updated);
+      setSourceDraft(updated.raw_text ?? "");
+      setSourceSavedText(updated.raw_text ?? "");
+      setSourceHistory([]);
+      setSourceFuture([]);
+      setStageResult(null);
+      setCharacters(null);
+      setScreenplay(null);
+      setScreenplayHistory([]);
+      setScreenplayFuture([]);
+      setValidationLog(null);
+    } finally {
+      setSavingSource(false);
+    }
+  };
+
+  const handleUndoScreenplay = () => {
+    if (!screenplay) return;
+    setScreenplayHistory(history => {
+      if (history.length === 0) return history;
+      const previous = history[history.length - 1];
+      setScreenplayFuture(future => [cloneScreenplay(screenplay), ...future].slice(0, HISTORY_LIMIT));
+      setScreenplay(previous);
+      return history.slice(0, -1);
+    });
+  };
+
+  const handleRedoScreenplay = () => {
+    if (!screenplay) return;
+    setScreenplayFuture(future => {
+      if (future.length === 0) return future;
+      const next = future[0];
+      setScreenplayHistory(history => [...history.slice(-(HISTORY_LIMIT - 1)), cloneScreenplay(screenplay)]);
+      setScreenplay(next);
+      return future.slice(1);
+    });
+  };
+
   const handleElementEdit = (sceneIdx: number, elIdx: number, field: string, value: string) => {
     if (!screenplay) return;
-    const updated = { ...screenplay };
+    setScreenplayHistory(history => [...history.slice(-(HISTORY_LIMIT - 1)), cloneScreenplay(screenplay)]);
+    setScreenplayFuture([]);
+    const updated = cloneScreenplay(screenplay);
     (updated.acts[0].scenes[sceneIdx].elements[elIdx] as unknown as Record<string, unknown>)[field] = value;
-    setScreenplay({ ...updated });
+    setScreenplay(updated);
   };
 
   const handleExportYaml = async () => {
@@ -333,24 +437,45 @@ export default function ProjectDetail({ projectId, onBack }: Props) {
 
         {/* 原文 */}
         {activeTab === "source" && (
-          <div className="rounded-[12px] border border-[rgba(0,0,0,0.1)] bg-[#f6f5f4] p-6 max-h-[700px] overflow-y-auto">
-            {project.raw_text ? (
-              <div className="space-y-3">
-                {stageResult ? stageResult.chapters.map(ch => (
-                  <div key={ch.id}>
-                    {ch.title && <h3 className="text-[14px] font-semibold mb-2 text-[#615d59]">{ch.title}</h3>}
-                    {ch.paragraphs.map(p => (
-                      <p key={p.id} onMouseEnter={() => setHighlightedPara(p.id)} onMouseLeave={() => setHighlightedPara(null)}
-                        className={`text-[16px] leading-[1.6] mb-2 cursor-default rounded-[4px] px-1 transition-colors ${highlightedPara === p.id ? "bg-[#0075de]/10" : ""}`}>
-                        {p.text}
-                      </p>
-                    ))}
-                  </div>
-                )) : (
-                  <pre className="whitespace-pre-wrap text-[16px] leading-[1.5]">{project.raw_text}</pre>
-                )}
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleSaveSource}
+                  disabled={savingSource || !sourceDraft.trim() || sourceDraft === sourceSavedText}
+                  className="inline-flex items-center gap-2 rounded-[4px] bg-[#0075de] px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-[#005bab] disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                >
+                  {savingSource ? <RefreshCw size={13} className="animate-spin" /> : <Save size={13} />}
+                  保存原文
+                </button>
+                <button
+                  onClick={handleUndoSource}
+                  disabled={sourceHistory.length === 0}
+                  title="撤销原文修改"
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-[4px] bg-[rgba(0,0,0,0.05)] text-[#615d59] hover:bg-[rgba(0,0,0,0.08)] disabled:opacity-35 disabled:cursor-not-allowed transition-all"
+                >
+                  <Undo2 size={15} />
+                </button>
+                <button
+                  onClick={handleRedoSource}
+                  disabled={sourceFuture.length === 0}
+                  title="重做原文修改"
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-[4px] bg-[rgba(0,0,0,0.05)] text-[#615d59] hover:bg-[rgba(0,0,0,0.08)] disabled:opacity-35 disabled:cursor-not-allowed transition-all"
+                >
+                  <Redo2 size={15} />
+                </button>
               </div>
-            ) : <p className="text-[16px] text-[#a39e98]">暂无文本内容</p>}
+              <span className="text-[12px] text-[#a39e98]">
+                {sourceDraft === sourceSavedText ? "已保存" : "未保存"}
+              </span>
+            </div>
+            <div className="rounded-[8px] border border-[rgba(0,0,0,0.1)] bg-white">
+              <textarea
+                value={sourceDraft}
+                onChange={e => handleSourceChange(e.target.value)}
+                className="h-[650px] w-full resize-none rounded-[8px] bg-white p-5 text-[16px] leading-[1.65] text-[rgba(0,0,0,0.95)] outline-none"
+              />
+            </div>
           </div>
         )}
 
@@ -429,7 +554,27 @@ export default function ProjectDetail({ projectId, onBack }: Props) {
                   onScroll={() => syncEditorScroll("screenplay")}
                   className="w-1/2 rounded-[12px] border border-[rgba(0,0,0,0.1)] bg-white p-4 overflow-y-auto"
                 >
-                  <h3 className="text-[14px] font-semibold mb-3 text-[#615d59]">剧本</h3>
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <h3 className="text-[14px] font-semibold text-[#615d59]">剧本</h3>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={handleUndoScreenplay}
+                        disabled={screenplayHistory.length === 0}
+                        title="撤销剧本修改"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-[4px] bg-[rgba(0,0,0,0.05)] text-[#615d59] hover:bg-[rgba(0,0,0,0.08)] disabled:opacity-35 disabled:cursor-not-allowed transition-all"
+                      >
+                        <Undo2 size={15} />
+                      </button>
+                      <button
+                        onClick={handleRedoScreenplay}
+                        disabled={screenplayFuture.length === 0}
+                        title="重做剧本修改"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-[4px] bg-[rgba(0,0,0,0.05)] text-[#615d59] hover:bg-[rgba(0,0,0,0.08)] disabled:opacity-35 disabled:cursor-not-allowed transition-all"
+                      >
+                        <Redo2 size={15} />
+                      </button>
+                    </div>
+                  </div>
                   {allScenes.map((scene, si) => (
                     <div
                       key={scene.id}

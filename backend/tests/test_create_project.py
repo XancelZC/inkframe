@@ -4,7 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.storage import detect_language
+from app.storage import detect_language, get_project_dir
 
 client = TestClient(app)
 
@@ -58,6 +58,52 @@ class TestCreateProjectFromText:
         detail_resp = client.get(f"/api/projects/{project_id}")
         assert detail_resp.status_code == 200
         assert detail_resp.json()["raw_text"] == test_text
+
+
+class TestUpdateProjectSource:
+    def test_update_source_text_invalidates_generated_outputs(self):
+        create_resp = client.post(
+            "/api/projects",
+            data={"title": "Editable Source", "text": "旧原文。"},
+        )
+        project_id = create_resp.json()["id"]
+        project_dir = get_project_dir(project_id)
+        generated_files = [
+            "02_preprocessed.json",
+            "03_characters.json",
+            "04_scenes.json",
+            "05_validated.json",
+            "06_screenplay.generated.yaml",
+            "07_screenplay.edited.yaml",
+            "validation_log.json",
+        ]
+        for filename in generated_files:
+            (project_dir / filename).write_text("stale", encoding="utf-8")
+
+        updated_text = "新原文第一行。\n\n新原文第二行。"
+        resp = client.put(
+            f"/api/projects/{project_id}/source",
+            json={"raw_text": updated_text},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["raw_text"] == updated_text
+        assert (project_dir / "01_raw.txt").read_text(encoding="utf-8") == updated_text
+        assert all(not (project_dir / filename).exists() for filename in generated_files)
+
+    def test_update_source_rejects_blank_text(self):
+        create_resp = client.post(
+            "/api/projects",
+            data={"title": "Reject Blank Source", "text": "原文。"},
+        )
+        project_id = create_resp.json()["id"]
+
+        resp = client.put(
+            f"/api/projects/{project_id}/source",
+            json={"raw_text": "   \n\t  "},
+        )
+
+        assert resp.status_code == 400
 
 
 class TestLanguageDetection:
