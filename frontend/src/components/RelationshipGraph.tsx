@@ -25,9 +25,22 @@ interface Props {
 }
 
 export default function RelationshipGraph({ characters, onNodeClick }: Props) {
+  const graphKey = useMemo(
+    () => characters
+      .map((char) => [
+        char.id,
+        char.name,
+        char.aliases.join(","),
+        char.description ?? "",
+        char.relationships.map((rel) => `${rel.target_character_id}-${rel.type}-${rel.description ?? ""}`).join(","),
+      ].join(":"))
+      .join("|"),
+    [characters],
+  );
+
   const characterNameById = useMemo(
     () => new Map(characters.map((char) => [char.id, char.name])),
-    [characters],
+    [graphKey],
   );
 
   const { initialNodes, initialEdges, relationshipRows } = useMemo(() => {
@@ -64,13 +77,15 @@ export default function RelationshipGraph({ characters, onNodeClick }: Props) {
           </div>
         ),
       },
+      draggable: true,
+      selectable: true,
       style: {
         background: "#ffffff",
         border: "1px solid rgba(0,0,0,0.1)",
         borderRadius: "8px",
         padding: "8px 12px",
         boxShadow: "rgba(0,0,0,0.04) 0px 4px 18px",
-        cursor: "pointer",
+        cursor: "grab",
       },
     }));
 
@@ -116,7 +131,7 @@ export default function RelationshipGraph({ characters, onNodeClick }: Props) {
     });
 
     return { initialNodes: nodes, initialEdges: edges, relationshipRows: rows };
-  }, [characterNameById, characters]);
+  }, [characterNameById, graphKey]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
@@ -124,7 +139,7 @@ export default function RelationshipGraph({ characters, onNodeClick }: Props) {
   useEffect(() => {
     setNodes(initialNodes);
     setEdges(initialEdges);
-  }, [initialEdges, initialNodes, setEdges, setNodes]);
+  }, [graphKey, setEdges, setNodes]);
 
   if (characters.length === 0) {
     return (
@@ -135,7 +150,7 @@ export default function RelationshipGraph({ characters, onNodeClick }: Props) {
   }
 
   return (
-    <div className="rounded-[12px] border border-[rgba(0,0,0,0.1)] bg-[#f6f5f4]">
+    <div className="rounded-[12px] border border-[rgba(0,0,0,0.1)] bg-[#f6f5f4] overflow-hidden">
       <div className="h-[500px]">
         <ReactFlow
           nodes={nodes}
@@ -144,8 +159,19 @@ export default function RelationshipGraph({ characters, onNodeClick }: Props) {
           onEdgesChange={onEdgesChange}
           onNodeClick={(_, node) => onNodeClick?.(node.id)}
           nodesDraggable
+          nodesConnectable={false}
+          elementsSelectable
+          panOnDrag
+          panOnScroll
+          zoomOnScroll
+          zoomOnPinch
+          selectionOnDrag={false}
+          minZoom={0.25}
+          maxZoom={1.8}
+          defaultEdgeOptions={{ selectable: false }}
           fitView
           proOptions={{ hideAttribution: true }}
+          className="[&_.react-flow__pane]:cursor-grab [&_.react-flow__pane.dragging]:cursor-grabbing [&_.react-flow__node.dragging]:cursor-grabbing"
         >
           <Background gap={20} size={1} color="rgba(0,0,0,0.05)" />
           <Controls showInteractive={false} />
