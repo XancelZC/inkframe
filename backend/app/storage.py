@@ -213,6 +213,18 @@ def update_novel(novel_id: str, title: Optional[str] = None, language: Optional[
     return True
 
 
+def set_novel_pinned(novel_id: str, pinned: bool) -> bool:
+    """Set whether a novel should be pinned in the project list."""
+    index = _read_novel_index()
+    novel = next((n for n in index.novels if n.id == novel_id), None)
+    if not novel:
+        return False
+    novel.pinned = pinned
+    novel.updated_at = datetime.now(timezone.utc)
+    _write_novel_index(index)
+    return True
+
+
 def update_project_title(project_id: str, title: str) -> bool:
     """Update a project's title. Returns True if found."""
     index = _read_index()
