@@ -1,7 +1,11 @@
 """Tests for novel (folder) API."""
 
+import threading
+import time
+
 from fastapi.testclient import TestClient
 
+from app.api import novels as novels_api
 from app.main import app
 
 client = TestClient(app)
@@ -196,3 +200,42 @@ class TestNovelAPI:
         assert resp.status_code == 201
         data = resp.json()
         assert [c["title"] for c in data["created_chapters"]] == ["第01章 (2)", "第01章 (3)"]
+
+    def test_import_chapters_auto_process_runs_concurrently(self, monkeypatch):
+        novel_resp = client.post("/api/novels", params={"title": "parallel import"})
+        novel_id = novel_resp.json()["id"]
+
+        lock = threading.Lock()
+        active_count = 0
+        max_active_count = 0
+        processed_ids: list[str] = []
+
+        def fake_run_all_stages(project_id: str, provider_id: str | None = None):
+            nonlocal active_count, max_active_count
+            with lock:
+                active_count += 1
+                max_active_count = max(max_active_count, active_count)
+                processed_ids.append(project_id)
+            time.sleep(0.05)
+            with lock:
+                active_count -= 1
+            return None
+
+        monkeypatch.setattr(novels_api, "_run_all_stages", fake_run_all_stages)
+
+        resp = client.post(
+            f"/api/novels/{novel_id}/chapters/import",
+            files=[
+                ("files", ("chapter-1.txt", b"first", "text/plain")),
+                ("files", ("chapter-2.txt", b"second", "text/plain")),
+                ("files", ("chapter-3.txt", b"third", "text/plain")),
+            ],
+            data={"auto_process": "true"},
+        )
+
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["created_count"] == 3
+        assert len(processed_ids) == 3
+        assert all(item["process_error"] is None for item in data["created_chapters"])
+        assert max_active_count > 1
