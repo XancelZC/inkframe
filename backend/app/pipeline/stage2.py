@@ -237,4 +237,4 @@ def run_stage2(project_id: str, provider_id: str = "mock") -> list[Scene]:
     output_data = [s.model_dump(mode="json") for s in all_scenes]
     output_file.write_text(json.dumps(output_data, indent=2, ensure_ascii=False), encoding="utf-8")
 
-    return scenes
+    return all_scenes

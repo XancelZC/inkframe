@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Optional
 
@@ -23,6 +24,7 @@ router = APIRouter(tags=["novels"])
 
 TEXT_EXTENSIONS = {".txt", ".md"}
 SYSTEM_FILE_NAMES = {".ds_store", "thumbs.db"}
+MAX_AUTO_PROCESS_WORKERS = 3
 
 
 def _is_ignored_import_path(path: str) -> bool:
@@ -67,10 +69,11 @@ def _natural_sort_key(path: str) -> list[object]:
     return [int(part) if part.isdigit() else part for part in re.split(r"(\d+)", normalized)]
 
 
-def _run_all_stages(project_id: str) -> Optional[str]:
+def _run_all_stages(project_id: str, provider_id: Optional[str] = None) -> Optional[str]:
     try:
-        active_pid = get_active_provider_id()
-        provider_id = get_provider_type(active_pid)
+        if provider_id is None:
+            active_pid = get_active_provider_id()
+            provider_id = get_provider_type(active_pid)
         run_stage0(project_id)
         run_stage1(project_id, provider_id=provider_id)
         run_stage2(project_id, provider_id=provider_id)
@@ -78,6 +81,28 @@ def _run_all_stages(project_id: str) -> Optional[str]:
         return None
     except Exception as exc:
         return str(exc)
+
+
+def _process_created_chapters(created: list[dict], max_workers: int = MAX_AUTO_PROCESS_WORKERS) -> None:
+    """Run the full pipeline for imported chapters with bounded concurrency."""
+    if not created:
+        return
+
+    active_pid = get_active_provider_id()
+    provider_id = get_provider_type(active_pid)
+    worker_count = max(1, min(max_workers, len(created)))
+
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
+        future_to_item = {
+            executor.submit(_run_all_stages, item["id"], provider_id): item
+            for item in created
+        }
+        for future in as_completed(future_to_item):
+            item = future_to_item[future]
+            try:
+                item["process_error"] = future.result()
+            except Exception as exc:
+                item["process_error"] = str(exc)
 
 
 async def _import_chapter_files(
@@ -134,9 +159,10 @@ async def _import_chapter_files(
             "path": import_path,
             "process_error": None,
         }
-        if auto_process:
-            item["process_error"] = _run_all_stages(summary.id)
         created.append(item)
+
+    if auto_process:
+        _process_created_chapters(created)
 
     return {
         "created_chapters": created,
