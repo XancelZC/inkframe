@@ -4,6 +4,7 @@ import {
   Background,
   Controls,
   MarkerType,
+  Position,
   ReactFlow,
   useEdgesState,
   useNodesState,
@@ -25,29 +26,71 @@ interface Props {
   onNodeClick?: (characterId: string) => void;
 }
 
-function buildRelationshipLayout(characters: Character[]): Map<string, { x: number; y: number }> {
+interface Relation {
+  source: string;
+  target: string;
+  type: string;
+}
+
+function sortIds(ids: string[], degreeById: Map<string, number>, nameById: Map<string, string>) {
+  return [...ids].sort((a, b) => {
+    const degreeDelta = (degreeById.get(b) ?? 0) - (degreeById.get(a) ?? 0);
+    return degreeDelta || (nameById.get(a) ?? a).localeCompare(nameById.get(b) ?? b, "zh-CN");
+  });
+}
+
+function buildRelationshipLayout(characters: Character[], relations: Relation[]): Map<string, { x: number; y: number }> {
   const positions = new Map<string, { x: number; y: number }>();
-  if (characters.length === 0) return positions;
+  const ids = characters.map((char) => char.id);
+  if (ids.length === 0) return positions;
 
-  const degreeById = new Map(characters.map((char) => [char.id, 0]));
-  characters.forEach((char) => {
-    char.relationships.forEach((rel) => {
-      if (!rel.target_character_id || !degreeById.has(rel.target_character_id)) return;
-      degreeById.set(char.id, (degreeById.get(char.id) ?? 0) + 1);
-      degreeById.set(rel.target_character_id, (degreeById.get(rel.target_character_id) ?? 0) + 1);
-    });
+  const nameById = new Map(characters.map((char) => [char.id, char.name]));
+  const adjacency = new Map(ids.map((id) => [id, [] as string[]]));
+  const degreeById = new Map(ids.map((id) => [id, 0]));
+
+  relations.forEach((rel) => {
+    adjacency.get(rel.source)?.push(rel.target);
+    adjacency.get(rel.target)?.push(rel.source);
+    degreeById.set(rel.source, (degreeById.get(rel.source) ?? 0) + 1);
+    degreeById.set(rel.target, (degreeById.get(rel.target) ?? 0) + 1);
   });
 
-  const ordered = [...characters].sort((a, b) => {
-    const degreeDelta = (degreeById.get(b.id) ?? 0) - (degreeById.get(a.id) ?? 0);
-    return degreeDelta || a.name.localeCompare(b.name, "zh-CN");
+  const visited = new Set<string>();
+  const components: string[][] = [];
+  ids.forEach((id) => {
+    if (visited.has(id)) return;
+    const queue = [id];
+    const component: string[] = [];
+    visited.add(id);
+
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      component.push(current);
+      sortIds(adjacency.get(current) ?? [], degreeById, nameById).forEach((next) => {
+        if (visited.has(next)) return;
+        visited.add(next);
+        queue.push(next);
+      });
+    }
+
+    components.push(component);
   });
 
-  const hasRelationships = ordered.some((char) => (degreeById.get(char.id) ?? 0) > 0);
-  if (!hasRelationships) {
-    const columns = Math.ceil(Math.sqrt(ordered.length));
-    ordered.forEach((char, index) => {
-      positions.set(char.id, {
+  const relatedComponents = components
+    .filter((component) => component.some((id) => (degreeById.get(id) ?? 0) > 0))
+    .sort((a, b) => b.length - a.length);
+  const isolatedIds = sortIds(
+    components
+      .filter((component) => component.every((id) => (degreeById.get(id) ?? 0) === 0))
+      .flat(),
+    degreeById,
+    nameById,
+  );
+
+  if (relatedComponents.length === 0) {
+    const columns = Math.ceil(Math.sqrt(ids.length));
+    sortIds(ids, degreeById, nameById).forEach((id, index) => {
+      positions.set(id, {
         x: (index % columns) * 260,
         y: Math.floor(index / columns) * 150,
       });
@@ -55,24 +98,73 @@ function buildRelationshipLayout(characters: Character[]): Map<string, { x: numb
     return positions;
   }
 
-  positions.set(ordered[0].id, { x: 0, y: 0 });
+  let blockY = 0;
+  let widestBlock = 0;
+  relatedComponents.forEach((component) => {
+    const root = sortIds(component, degreeById, nameById)[0];
+    const componentSet = new Set(component);
+    const levelById = new Map<string, number>([[root, 0]]);
+    const queue = [root];
 
-  const rest = ordered.slice(1);
-  let cursor = 0;
-  let ring = 0;
-  while (cursor < rest.length) {
-    const capacity = ring === 0 ? 8 : 12 + ring * 4;
-    const radius = 280 + ring * 220;
-    const items = rest.slice(cursor, cursor + capacity);
-    items.forEach((char, index) => {
-      const angle = (2 * Math.PI * index) / items.length - Math.PI / 2;
-      positions.set(char.id, {
-        x: Math.round(radius * Math.cos(angle)),
-        y: Math.round(radius * Math.sin(angle)),
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      const level = levelById.get(current) ?? 0;
+      sortIds(adjacency.get(current) ?? [], degreeById, nameById).forEach((next) => {
+        if (!componentSet.has(next) || levelById.has(next)) return;
+        levelById.set(next, level + 1);
+        queue.push(next);
+      });
+    }
+
+    const levels = Array.from(levelById.entries()).reduce<string[][]>((acc, [id, level]) => {
+      if (!acc[level]) acc[level] = [];
+      acc[level].push(id);
+      return acc;
+    }, []);
+
+    levels.forEach((levelIds) => {
+      levelIds.sort((a, b) => (nameById.get(a) ?? a).localeCompare(nameById.get(b) ?? b, "zh-CN"));
+    });
+
+    for (let levelIndex = 1; levelIndex < levels.length; levelIndex += 1) {
+      const previousOrder = new Map(levels[levelIndex - 1].map((id, index) => [id, index]));
+      levels[levelIndex].sort((a, b) => {
+        const barycenter = (id: string) => {
+          const neighborIndexes = (adjacency.get(id) ?? [])
+            .map((neighbor) => previousOrder.get(neighbor))
+            .filter((index): index is number => index !== undefined);
+          if (neighborIndexes.length === 0) return Number.MAX_SAFE_INTEGER;
+          return neighborIndexes.reduce((sum, index) => sum + index, 0) / neighborIndexes.length;
+        };
+        const barycenterDelta = barycenter(a) - barycenter(b);
+        return barycenterDelta || (nameById.get(a) ?? a).localeCompare(nameById.get(b) ?? b, "zh-CN");
+      });
+    }
+
+    const maxRows = Math.max(...levels.map((level) => level.length));
+    const blockHeight = Math.max(150, maxRows * 150);
+    levels.forEach((levelIds, levelIndex) => {
+      const startY = blockY + (blockHeight - levelIds.length * 150) / 2;
+      levelIds.forEach((id, rowIndex) => {
+        positions.set(id, {
+          x: levelIndex * 300,
+          y: startY + rowIndex * 150,
+        });
       });
     });
-    cursor += items.length;
-    ring += 1;
+
+    widestBlock = Math.max(widestBlock, (levels.length - 1) * 300);
+    blockY += blockHeight + 190;
+  });
+
+  if (isolatedIds.length > 0) {
+    const isolatedX = widestBlock + 420;
+    isolatedIds.forEach((id, index) => {
+      positions.set(id, {
+        x: isolatedX + (index % 2) * 240,
+        y: Math.floor(index / 2) * 130,
+      });
+    });
   }
 
   return positions;
@@ -100,7 +192,20 @@ export default function RelationshipGraph({ characters, onNodeClick }: Props) {
   );
 
   const { initialNodes, initialEdges, relationshipRows } = useMemo(() => {
-    const positions = buildRelationshipLayout(characters);
+    const characterIds = new Set(characters.map((char) => char.id));
+    const relations: Relation[] = [];
+    characters.forEach((char) => {
+      char.relationships.forEach((rel) => {
+        if (!rel.target_character_id || !characterIds.has(rel.target_character_id)) return;
+        relations.push({
+          source: char.id,
+          target: rel.target_character_id,
+          type: rel.type || "关系",
+        });
+      });
+    });
+
+    const positions = buildRelationshipLayout(characters, relations);
 
     const nodes: Node[] = characters.map((char) => ({
       id: char.id,
@@ -131,6 +236,8 @@ export default function RelationshipGraph({ characters, onNodeClick }: Props) {
           </div>
         ),
       },
+      sourcePosition: Position.Right,
+      targetPosition: Position.Left,
       draggable: true,
       selectable: true,
       style: {
@@ -144,43 +251,45 @@ export default function RelationshipGraph({ characters, onNodeClick }: Props) {
       },
     }));
 
-    const edgeMap = new Map<string, { source: string; target: string; labels: string[] }>();
+    const edgeMap = new Map<string, { labels: Set<string> }>();
     const rows: { source: string; target: string; text: string }[] = [];
 
-    characters.forEach((char) => {
-      char.relationships.forEach((rel) => {
-        if (!rel.target_character_id) return;
-
-        const key = [char.id, rel.target_character_id].sort().join("-");
-        const label = rel.description ? `${rel.type}：${rel.description}` : rel.type;
-        rows.push({
-          source: char.name,
-          target: characterNameById.get(rel.target_character_id) ?? rel.target_character_id,
-          text: label,
-        });
-
-        const edge = edgeMap.get(key);
-        if (edge) {
-          edge.labels.push(label);
-        } else {
-          edgeMap.set(key, { source: char.id, target: rel.target_character_id, labels: [label] });
-        }
+    relations.forEach((rel) => {
+      const key = [rel.source, rel.target].sort().join("-");
+      rows.push({
+        source: characterNameById.get(rel.source) ?? rel.source,
+        target: characterNameById.get(rel.target) ?? rel.target,
+        text: rel.type,
       });
+
+      const edge = edgeMap.get(key);
+      if (edge) {
+        edge.labels.add(rel.type);
+      } else {
+        edgeMap.set(key, { labels: new Set([rel.type]) });
+      }
     });
 
     const edges: Edge[] = Array.from(edgeMap.entries()).map(([key, edge]) => {
-      const label = edge.labels.join("；");
+      const [a, b] = key.split("-");
+      const aPosition = positions.get(a) ?? { x: 0, y: 0 };
+      const bPosition = positions.get(b) ?? { x: 0, y: 0 };
+      const source = aPosition.x <= bPosition.x ? a : b;
+      const target = source === a ? b : a;
+
       return {
         id: key,
-        source: edge.source,
-        target: edge.target,
-        label,
+        source,
+        target,
+        type: "straight",
+        label: Array.from(edge.labels).join("/"),
         labelStyle: { fontSize: 11, fill: "#3f3a36", fontWeight: 500 },
         labelBgStyle: { fill: "#ffffff", stroke: "rgba(0,0,0,0.12)", strokeWidth: 1 },
         labelBgPadding: [6, 3] as [number, number],
         style: { stroke: "rgba(0,0,0,0.22)", strokeWidth: 1.5 },
         markerEnd: { type: MarkerType.ArrowClosed, color: "rgba(0,0,0,0.22)" },
         animated: false,
+        interactionWidth: 16,
       };
     });
 
