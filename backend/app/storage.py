@@ -124,6 +124,37 @@ def get_raw_text(project_id: str) -> Optional[str]:
     return raw_file.read_text(encoding="utf-8")
 
 
+def update_project_raw_text(project_id: str, raw_text: str) -> Optional[ProjectSummary]:
+    """Update a project's raw text and invalidate generated pipeline files."""
+    index = _read_index()
+    project = next((p for p in index.projects if p.id == project_id), None)
+    if not project:
+        return None
+
+    project_dir = DATA_DIR / project_id
+    project_dir.mkdir(parents=True, exist_ok=True)
+    (project_dir / "01_raw.txt").write_text(raw_text, encoding="utf-8")
+
+    project.source_language = detect_language(raw_text)
+    project.updated_at = datetime.now(timezone.utc)
+    _write_index(index)
+
+    for filename in (
+        "02_preprocessed.json",
+        "03_characters.json",
+        "04_scenes.json",
+        "05_validated.json",
+        "06_screenplay.generated.yaml",
+        "07_screenplay.edited.yaml",
+        "validation_log.json",
+    ):
+        file_path = project_dir / filename
+        if file_path.exists():
+            file_path.unlink()
+
+    return project
+
+
 # ── Novel storage ─────────────────────────────────────────────────
 
 
