@@ -115,7 +115,9 @@ export default function ProjectDetail({ projectId, onBack }: Props) {
   const [validationLog, setValidationLog] = useState<ValidationLog | null>(null);
   const [validationFilter, setValidationFilter] = useState<"all" | "error" | "warning" | "info">("all");
   const [showRunMenu, setShowRunMenu] = useState(false);
+  const sourceRef = useRef<HTMLDivElement>(null);
   const screenplayRef = useRef<HTMLDivElement>(null);
+  const syncingScrollRef = useRef(false);
 
   const loadAll = () => {
     fetch(`/api/projects/${projectId}`).then(r => r.json()).then(d => { setProject(d); setLoading(false); }).catch(() => setLoading(false));
@@ -174,6 +176,26 @@ export default function ProjectDetail({ projectId, onBack }: Props) {
       a.click();
       URL.revokeObjectURL(url);
     }
+  };
+
+  const syncEditorScroll = (source: "source" | "screenplay") => {
+    if (syncingScrollRef.current) return;
+
+    const sourceEl = sourceRef.current;
+    const screenplayEl = screenplayRef.current;
+    if (!sourceEl || !screenplayEl) return;
+
+    const from = source === "source" ? sourceEl : screenplayEl;
+    const to = source === "source" ? screenplayEl : sourceEl;
+    const maxFrom = from.scrollHeight - from.clientHeight;
+    const maxTo = to.scrollHeight - to.clientHeight;
+    if (maxFrom <= 0 || maxTo <= 0) return;
+
+    syncingScrollRef.current = true;
+    to.scrollTop = (from.scrollTop / maxFrom) * maxTo;
+    window.setTimeout(() => {
+      syncingScrollRef.current = false;
+    }, 50);
   };
 
   if (loading) return <div className="min-h-screen bg-white text-[rgba(0,0,0,0.95)]"><header className="border-b border-[rgba(0,0,0,0.1)] px-6 py-4"><p className="text-[16px] text-[#615d59]">加载中...</p></header></div>;
@@ -347,7 +369,11 @@ export default function ProjectDetail({ projectId, onBack }: Props) {
             ) : (
               <div className="flex gap-4 h-[700px]">
                 {/* 左侧：原文 */}
-                <div className="w-1/2 rounded-[12px] border border-[rgba(0,0,0,0.1)] bg-[#f6f5f4] p-4 overflow-y-auto">
+                <div
+                  ref={sourceRef}
+                  onScroll={() => syncEditorScroll("source")}
+                  className="w-1/2 rounded-[12px] border border-[rgba(0,0,0,0.1)] bg-[#f6f5f4] p-4 overflow-y-auto"
+                >
                   <h3 className="text-[14px] font-semibold mb-3 text-[#615d59]">原文</h3>
                   {stageResult?.chapters.map(ch => (
                     <div key={ch.id} className="mb-4">
@@ -369,7 +395,11 @@ export default function ProjectDetail({ projectId, onBack }: Props) {
                 </div>
 
                 {/* 右侧：剧本编辑器 */}
-                <div ref={screenplayRef} className="w-1/2 rounded-[12px] border border-[rgba(0,0,0,0.1)] bg-white p-4 overflow-y-auto">
+                <div
+                  ref={screenplayRef}
+                  onScroll={() => syncEditorScroll("screenplay")}
+                  className="w-1/2 rounded-[12px] border border-[rgba(0,0,0,0.1)] bg-white p-4 overflow-y-auto"
+                >
                   <h3 className="text-[14px] font-semibold mb-3 text-[#615d59]">剧本</h3>
                   {allScenes.map((scene, si) => (
                     <div key={scene.id} className="mb-6">
