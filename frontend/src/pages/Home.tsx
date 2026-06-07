@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { Plus, Settings, Search, Trash2, X, FolderOpen, ChevronRight, ChevronDown, FileText, ArrowUpDown } from "lucide-react";
+import { Plus, Settings, Search, Trash2, X, FolderOpen, ChevronRight, ChevronDown, FileText, ArrowUpDown, Pin, PinOff } from "lucide-react";
 
 interface NovelSummary {
   id: string;
   title: string;
   language: string;
+  pinned: boolean;
   created_at: string;
   updated_at: string;
   chapter_count: number;
@@ -92,7 +93,20 @@ export default function Home({ onNewNovel, onSelectNovel, onSelectChapter, onSet
   };
 
   // 排序
+  const handleTogglePin = async (novelId: string, pinned: boolean) => {
+    setNovels(prev => prev.map(n => n.id === novelId ? { ...n, pinned } : n));
+    try {
+      const res = await fetch(`/api/novels/${novelId}/pin?pinned=${pinned}`, { method: "PUT" });
+      if (!res.ok) {
+        setNovels(prev => prev.map(n => n.id === novelId ? { ...n, pinned: !pinned } : n));
+      }
+    } catch {
+      setNovels(prev => prev.map(n => n.id === novelId ? { ...n, pinned: !pinned } : n));
+    }
+  };
+
   const sortedNovels = [...novels].sort((a, b) => {
+    if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
     switch (sortMode) {
       case "time_desc": return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
       case "time_asc": return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
@@ -207,6 +221,12 @@ export default function Home({ onNewNovel, onSelectNovel, onSelectChapter, onSet
                   <span className="text-[12px] text-[#a39e98] flex-shrink-0">
                     {new Date(novel.created_at).toLocaleDateString("zh-CN")}
                   </span>
+                  <button onClick={(e) => { e.stopPropagation(); handleTogglePin(novel.id, !novel.pinned); }}
+                    title={novel.pinned ? "取消置顶" : "置顶项目"}
+                    aria-label={novel.pinned ? "取消置顶" : "置顶项目"}
+                    className={`flex-shrink-0 rounded-[4px] p-1 transition-all ${novel.pinned ? "text-[#0075de] bg-[#e8f3ff]" : "opacity-0 group-hover:opacity-100 text-[#a39e98] hover:text-[#0075de] hover:bg-[#e8f3ff]"}`}>
+                    {novel.pinned ? <PinOff size={13} /> : <Pin size={13} />}
+                  </button>
                   <button onClick={(e) => { e.stopPropagation(); setDeleteTarget(novel); }}
                     className="opacity-0 group-hover:opacity-100 flex-shrink-0 rounded-[4px] p-1 text-[#a39e98] hover:text-[#d44] hover:bg-[#fde8e8] transition-all">
                     <Trash2 size={13} />

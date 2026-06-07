@@ -1,6 +1,5 @@
 """Tests for novel (folder) API."""
 
-import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -20,22 +19,27 @@ class TestNovelAPI:
         data = resp.json()
         assert data["title"] == "测试小说"
         assert data["language"] == "zh"
+        assert data["pinned"] is False
         assert data["id"].startswith("nvl_")
 
     def test_get_novel_with_chapters(self):
-        # 创建小说
         novel_resp = client.post("/api/novels", params={"title": "带章节小说", "language": "zh"})
         novel_id = novel_resp.json()["id"]
 
-        # 添加章节（使用 form data）
-        client.post(f"/api/novels/{novel_id}/chapters", data={"title": "第一章", "text": "这是第一章内容"})
-        client.post(f"/api/novels/{novel_id}/chapters", data={"title": "第二章", "text": "这是第二章内容"})
+        client.post(
+            f"/api/novels/{novel_id}/chapters",
+            data={"title": "第一章", "text": "这是第一章内容"},
+        )
+        client.post(
+            f"/api/novels/{novel_id}/chapters",
+            data={"title": "第二章", "text": "这是第二章内容"},
+        )
 
-        # 获取小说详情
         resp = client.get(f"/api/novels/{novel_id}")
         assert resp.status_code == 200
         data = resp.json()
         assert data["title"] == "带章节小说"
+        assert data["pinned"] is False
         assert data["chapter_count"] == 2
         assert len(data["chapters"]) == 2
         assert data["chapters"][0]["title"] == "第一章"
@@ -47,8 +51,28 @@ class TestNovelAPI:
         resp = client.delete(f"/api/novels/{novel_id}")
         assert resp.status_code == 200
 
-        # 确认已删除
         resp = client.get(f"/api/novels/{novel_id}")
+        assert resp.status_code == 404
+
+    def test_pin_and_unpin_novel(self):
+        novel_resp = client.post("/api/novels", params={"title": "置顶测试"})
+        novel_id = novel_resp.json()["id"]
+
+        pin_resp = client.put(f"/api/novels/{novel_id}/pin", params={"pinned": True})
+        assert pin_resp.status_code == 200
+        assert pin_resp.json()["pinned"] is True
+
+        list_resp = client.get("/api/novels")
+        assert list_resp.status_code == 200
+        pinned_novel = next(n for n in list_resp.json() if n["id"] == novel_id)
+        assert pinned_novel["pinned"] is True
+
+        unpin_resp = client.put(f"/api/novels/{novel_id}/pin", params={"pinned": False})
+        assert unpin_resp.status_code == 200
+        assert unpin_resp.json()["pinned"] is False
+
+    def test_pin_missing_novel(self):
+        resp = client.put("/api/novels/nvl_nonexistent/pin", params={"pinned": True})
         assert resp.status_code == 404
 
     def test_delete_novel_cascades_chapters(self):
@@ -58,10 +82,8 @@ class TestNovelAPI:
         chapter_resp = client.post(f"/api/novels/{novel_id}/chapters", data={"title": "第一章"})
         chapter_id = chapter_resp.json()["id"]
 
-        # 删除小说
         client.delete(f"/api/novels/{novel_id}")
 
-        # 章节也应该被删除
         resp = client.get(f"/api/projects/{chapter_id}")
         assert resp.status_code == 404
 
@@ -80,7 +102,6 @@ class TestNovelAPI:
         novel_id = novel_resp.json()["id"]
 
         resp = client.post(f"/api/novels/{novel_id}/chapters", data={"title": ""})
-        # FastAPI 对空 Form 字段返回 422
         assert resp.status_code in (400, 422)
 
     def test_create_chapter_rejects_missing_novel(self):
