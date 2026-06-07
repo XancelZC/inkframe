@@ -57,7 +57,7 @@ def run_stage3(project_id: str) -> ValidationLog:
             entries.append(ValidationLogEntry(
                 severity=ValidationSeverity.WARNING,
                 code="empty_scene",
-                message=f"Scene {scene_id} has no elements",
+                message=f"场景 {scene_id} 没有任何剧本元素，请补充动作、对话、旁白或转场。",
                 scene_id=scene_id,
             ))
 
@@ -91,7 +91,7 @@ def run_stage3(project_id: str) -> ValidationLog:
                 entries.append(ValidationLogEntry(
                     severity=ValidationSeverity.WARNING,
                     code="low_confidence",
-                    message=f"Element {el_id} has low confidence ({confidence:.2f})",
+                    message=f"元素 {el_id} 的置信度较低（{confidence:.2f}），建议对照原文检查或手动修改。",
                     scene_id=scene_id,
                     element_id=el_id,
                 ))
@@ -101,7 +101,7 @@ def run_stage3(project_id: str) -> ValidationLog:
                 entries.append(ValidationLogEntry(
                     severity=ValidationSeverity.INFO,
                     code="inferred_no_source",
-                    message=f"Inferred element {el_id} has no source reference",
+                    message=f"推断生成的元素 {el_id} 缺少原文引用，建议补充来源或确认该内容是否需要保留。",
                     scene_id=scene_id,
                     element_id=el_id,
                 ))
@@ -113,7 +113,7 @@ def run_stage3(project_id: str) -> ValidationLog:
                     entries.append(ValidationLogEntry(
                         severity=ValidationSeverity.WARNING,
                         code="empty_source_quote",
-                        message=f"Element {el_id} has source reference with empty quote",
+                        message=f"元素 {el_id} 的原文引用缺少摘录内容，请检查来源段落。",
                         scene_id=scene_id,
                         element_id=el_id,
                     ))

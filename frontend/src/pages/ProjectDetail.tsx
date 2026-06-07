@@ -101,6 +101,16 @@ const TAB_LABELS: Record<Tab, string> = {
   graph: "图谱与时间线",
 };
 
+const VALIDATION_CODE_LABELS: Record<string, string> = {
+  scene_order: "场景顺序异常",
+  empty_scene: "空场景",
+  missing_character: "缺少角色引用",
+  invalid_character_ref: "无效角色引用",
+  low_confidence: "低置信度",
+  inferred_no_source: "推断内容缺少来源",
+  empty_source_quote: "原文摘录为空",
+};
+
 export default function ProjectDetail({ projectId, onBack }: Props) {
   const [project, setProject] = useState<ProjectDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -118,6 +128,8 @@ export default function ProjectDetail({ projectId, onBack }: Props) {
   const sourceRef = useRef<HTMLDivElement>(null);
   const screenplayRef = useRef<HTMLDivElement>(null);
   const syncingScrollRef = useRef(false);
+  const sceneRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const elementRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const loadAll = () => {
     fetch(`/api/projects/${projectId}`).then(r => r.json()).then(d => { setProject(d); setLoading(false); }).catch(() => setLoading(false));
@@ -196,6 +208,23 @@ export default function ProjectDetail({ projectId, onBack }: Props) {
     window.setTimeout(() => {
       syncingScrollRef.current = false;
     }, 50);
+  };
+
+  const handleGoToValidationTarget = (entry: ValidationEntry) => {
+    setActiveTab("screenplay");
+    if (entry.element_id) {
+      setHighlightedElement(entry.element_id);
+    }
+
+    window.setTimeout(() => {
+      const target = entry.element_id
+        ? elementRefs.current[entry.element_id]
+        : entry.scene_id
+          ? sceneRefs.current[entry.scene_id]
+          : null;
+
+      target?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 80);
   };
 
   if (loading) return <div className="min-h-screen bg-white text-[rgba(0,0,0,0.95)]"><header className="border-b border-[rgba(0,0,0,0.1)] px-6 py-4"><p className="text-[16px] text-[#615d59]">加载中...</p></header></div>;
@@ -402,7 +431,11 @@ export default function ProjectDetail({ projectId, onBack }: Props) {
                 >
                   <h3 className="text-[14px] font-semibold mb-3 text-[#615d59]">剧本</h3>
                   {allScenes.map((scene, si) => (
-                    <div key={scene.id} className="mb-6">
+                    <div
+                      key={scene.id}
+                      ref={(node) => { sceneRefs.current[scene.id] = node; }}
+                      className="mb-6"
+                    >
                       <div className="flex items-center gap-2 mb-2">
                         <span className="rounded-[9999px] bg-[#f2f9ff] px-2 py-0.5 text-[11px] font-semibold text-[#097fe8]">{scene.id}</span>
                         <span className="text-[14px] font-semibold">{scene.title ?? "未命名场景"}</span>
@@ -415,6 +448,7 @@ export default function ProjectDetail({ projectId, onBack }: Props) {
                           const isLinked = highlightedPara && el.source_reference?.paragraph_ids?.includes(highlightedPara);
                           return (
                             <div key={el.id}
+                              ref={(node) => { elementRefs.current[el.id] = node; }}
                               onMouseEnter={() => setHighlightedElement(el.id)}
                               onMouseLeave={() => setHighlightedElement(null)}
                               className={`rounded-[8px] border p-3 transition-colors ${isHighlighted || isLinked ? "border-[#0075de] bg-[#0075de]/5" : "border-[rgba(0,0,0,0.1)]"} ${el.inferred ? "border-l-2 border-l-[#dd5b00]" : ""} ${el.confidence < 0.7 ? "border-l-2 border-l-[#d44]" : ""}`}>
@@ -508,9 +542,19 @@ export default function ProjectDetail({ projectId, onBack }: Props) {
                         }`}>
                           {entry.severity === "error" ? "错误" : entry.severity === "warning" ? "警告" : "信息"}
                         </span>
-                        <span className="text-[12px] text-[#615d59] font-mono">{entry.code}</span>
+                        <span className="text-[12px] font-medium text-[#615d59]">
+                          {VALIDATION_CODE_LABELS[entry.code] ?? entry.code}
+                        </span>
                         {entry.scene_id && <span className="text-[11px] text-[#a39e98]">{entry.scene_id}</span>}
                         {entry.element_id && <span className="text-[11px] text-[#a39e98]">{entry.element_id}</span>}
+                        {(entry.scene_id || entry.element_id) && (
+                          <button
+                            onClick={() => handleGoToValidationTarget(entry)}
+                            className="ml-auto rounded-[4px] bg-white px-2 py-1 text-[12px] font-medium text-[#0075de] hover:bg-[#f2f9ff] transition-colors"
+                          >
+                            去修改
+                          </button>
+                        )}
                       </div>
                       <p className="text-[14px]">{entry.message}</p>
                     </div>
