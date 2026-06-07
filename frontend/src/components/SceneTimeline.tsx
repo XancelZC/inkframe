@@ -36,35 +36,35 @@ export default function SceneTimeline({ scenes, onSceneClick, highlightedScene }
           <div key={scene.id} className="flex items-center gap-3 flex-shrink-0">
             <button
               onClick={() => onSceneClick?.(scene.id)}
-              className={`w-[180px] rounded-[8px] border p-3 text-left transition-colors ${
+              className={`min-h-[132px] w-[260px] rounded-[8px] border p-3 text-left transition-colors ${
                 highlightedScene === scene.id
                   ? "border-[#0075de] bg-[#0075de]/5"
                   : "border-[rgba(0,0,0,0.1)] bg-white hover:border-[rgba(0,0,0,0.2)]"
               }`}
             >
-              <div className="flex items-center gap-1.5 mb-1.5">
+              <div className="mb-2 flex items-start gap-1.5">
                 <span className="rounded-[4px] bg-[#f2f9ff] px-1.5 py-0.5 text-[10px] font-semibold text-[#097fe8]">
                   {scene.id}
                 </span>
-                <span className="text-[13px] font-semibold truncate">
+                <span className="min-w-0 flex-1 break-words text-[13px] font-semibold leading-[1.35]">
                   {scene.title ?? "未命名"}
                 </span>
               </div>
               {scene.location && (
-                <div className="flex items-center gap-1 text-[11px] text-[#615d59] mb-0.5">
-                  <MapPin size={10} />
-                  <span className="truncate">{scene.location}</span>
+                <div className="mb-1 flex items-start gap-1 text-[11px] leading-[1.35] text-[#615d59]">
+                  <MapPin size={10} className="mt-0.5 flex-shrink-0" />
+                  <span className="min-w-0 flex-1 break-words">{scene.location}</span>
                 </div>
               )}
               {scene.time_of_day && (
-                <div className="flex items-center gap-1 text-[11px] text-[#a39e98] mb-0.5">
-                  <Clock size={10} />
-                  <span>{scene.time_of_day}</span>
+                <div className="mb-1 flex items-center gap-1 text-[11px] text-[#a39e98]">
+                  <Clock size={10} className="flex-shrink-0" />
+                  <span className="break-words">{scene.time_of_day}</span>
                 </div>
               )}
               {characterCount > 0 && (
                 <div className="flex items-center gap-1 text-[11px] text-[#a39e98]">
-                  <Users size={10} />
+                  <Users size={10} className="flex-shrink-0" />
                   <span>{characterCount} 个角色</span>
                 </div>
               )}
