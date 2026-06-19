@@ -141,6 +141,7 @@ export default function ProjectDetail({ projectId, onBack }: Props) {
   const syncingScrollRef = useRef(false);
   const sceneRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const elementRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const paragraphRefs = useRef<Record<string, HTMLParagraphElement | null>>({});
 
   const loadAll = () => {
     fetch(`/api/projects/${projectId}`).then(r => r.json()).then(d => {
@@ -301,17 +302,47 @@ export default function ProjectDetail({ projectId, onBack }: Props) {
     const screenplayEl = screenplayRef.current;
     if (!sourceEl || !screenplayEl) return;
 
-    const from = source === "source" ? sourceEl : screenplayEl;
-    const to = source === "source" ? screenplayEl : sourceEl;
-    const maxFrom = from.scrollHeight - from.clientHeight;
-    const maxTo = to.scrollHeight - to.clientHeight;
-    if (maxFrom <= 0 || maxTo <= 0) return;
-
     syncingScrollRef.current = true;
-    to.scrollTop = (from.scrollTop / maxFrom) * maxTo;
-    window.setTimeout(() => {
-      syncingScrollRef.current = false;
-    }, 50);
+
+    if (source === "source") {
+      // 找原文容器内当前可见区域顶部最近的段落
+      const containerTop = sourceEl.getBoundingClientRect().top;
+      let topParaId: string | null = null;
+      let minDist = Infinity;
+      for (const [id, el] of Object.entries(paragraphRefs.current)) {
+        if (!el) continue;
+        const dist = Math.abs(el.getBoundingClientRect().top - containerTop);
+        if (dist < minDist) { minDist = dist; topParaId = id; }
+      }
+      if (topParaId) {
+        // 找剧本中第一个引用该段落的元素
+        const allScenes = screenplay?.acts.flatMap(a => a.scenes) ?? [];
+        const targetEl = allScenes
+          .flatMap(s => s.elements)
+          .find(e => e.source_reference?.paragraph_ids?.includes(topParaId!));
+        if (targetEl && elementRefs.current[targetEl.id]) {
+          elementRefs.current[targetEl.id]!.scrollIntoView({ block: "start" });
+        }
+      }
+    } else {
+      // 找剧本容器内当前可见区域顶部最近的元素，再反向定位到原文段落
+      const containerTop = screenplayEl.getBoundingClientRect().top;
+      const allScenes = screenplay?.acts.flatMap(a => a.scenes) ?? [];
+      let topEl: SceneElement | null = null;
+      let minDist = Infinity;
+      for (const el of allScenes.flatMap(s => s.elements)) {
+        const domEl = elementRefs.current[el.id];
+        if (!domEl) continue;
+        const dist = Math.abs(domEl.getBoundingClientRect().top - containerTop);
+        if (dist < minDist) { minDist = dist; topEl = el; }
+      }
+      if (topEl?.source_reference?.paragraph_ids?.[0]) {
+        const paraId = topEl.source_reference.paragraph_ids[0];
+        paragraphRefs.current[paraId]?.scrollIntoView({ block: "start" });
+      }
+    }
+
+    window.setTimeout(() => { syncingScrollRef.current = false; }, 50);
   };
 
   const handleGoToValidationTarget = (entry: ValidationEntry) => {
@@ -537,6 +568,7 @@ export default function ProjectDetail({ projectId, onBack }: Props) {
                         const isHighlighted = highlightedPara === p.id || elIds.includes(highlightedElement ?? "");
                         return (
                           <p key={p.id}
+                            ref={(node) => { paragraphRefs.current[p.id] = node; }}
                             onMouseEnter={() => setHighlightedPara(p.id)}
                             onMouseLeave={() => setHighlightedPara(null)}
                             className={`text-[15px] leading-[1.6] mb-2 rounded-[4px] px-1 cursor-default transition-colors ${isHighlighted ? "bg-[#0075de]/10" : ""}`}>

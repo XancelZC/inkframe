@@ -125,9 +125,12 @@ export default function Home({ onNewNovel, onSelectNovel, onSelectChapter, onSet
       })
     : sortedNovels;
 
-  // 搜索时自动展开有匹配章节的小说
+  // 搜索时自动展开有匹配章节的小说；清除搜索时折叠全部
   useEffect(() => {
-    if (!search.trim()) return;
+    if (!search.trim()) {
+      setNovels(prev => prev.map(n => ({ ...n, expanded: false })));
+      return;
+    }
     setNovels(prev => prev.map(n => {
       const q = search.toLowerCase();
       const chapterMatch = n.chapters.some(c => c.title.toLowerCase().includes(q));

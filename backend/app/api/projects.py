@@ -303,17 +303,17 @@ def get_screenplay(project_id: str):
         characters = []
         if char_file.exists():
             characters = json.loads(char_file.read_text(encoding="utf-8")).get("characters", [])
-        # Read metadata
-        meta_file = project_dir / "metadata.json"
-        metadata = {}
-        if meta_file.exists():
-            metadata = json.loads(meta_file.read_text(encoding="utf-8"))
+
+        # Get title from project (chapter title)
+        project = next((p for p in projects if p.id == project_id), None)
+        title = project.title if project else project_id
+        source_language = project.source_language if project else "zh"
 
         return {
             "metadata": {
                 "project_id": project_id,
-                "title": metadata.get("title", "Untitled"),
-                "source_language": metadata.get("source_language", "zh"),
+                "title": title,
+                "source_language": source_language,
             },
             "characters": characters,
             "acts": [{"id": "act_01", "title": "Act 1", "scenes": scenes}],
