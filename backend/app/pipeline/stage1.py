@@ -92,10 +92,86 @@ CHARACTER_EXTRACTION_SCHEMA = {
 }
 
 
+CHAPTER_CHAR_BUDGET = 6000  # 单次 LLM 调用的原文字符上限
+
+
+def _extract_from_text(provider, text: str, candidates: list[str]) -> list[dict]:
+    """对一段文本调用 LLM 提取角色，返回原始 dict 列表。"""
+    prompt = f"""你是一个专业的剧本分析助手。请从以下小说原文中提取所有出现过的角色。
+
+重要规则：
+- 只提取原文中明确出现的人物，不要编造
+- 如果原文中没有明确的人物，返回空数组
+- 角色名必须与原文一致
+
+候选人物名（仅供参考，可能不准确）：{', '.join(candidates) if candidates else '无'}
+
+原文：
+{text}
+
+请提取角色信息，返回 JSON。"""
+    result = provider.generate_json(prompt, CHARACTER_EXTRACTION_SCHEMA)
+    return result.get("characters", [])
+
+
+def _chunk_chapters(chapters: list[dict], budget: int = CHAPTER_CHAR_BUDGET) -> list[str]:
+    """将所有章节按字符预算切成多个文本块，每块不超过 budget。
+
+    优先按章节边界切分；单章超长时再按段落细分。
+    """
+    chunks: list[str] = []
+    current = ""
+    for chapter in chapters:
+        ch_text = "\n".join(p.get("text", "") for p in chapter.get("paragraphs", []))
+        if not ch_text:
+            continue
+        if len(ch_text) > budget:
+            if current:
+                chunks.append(current)
+                current = ""
+            para_buf = ""
+            for para in chapter.get("paragraphs", []):
+                pt = para.get("text", "")
+                if len(para_buf) + len(pt) > budget and para_buf:
+                    chunks.append(para_buf)
+                    para_buf = ""
+                para_buf += pt + "\n"
+            if para_buf:
+                chunks.append(para_buf)
+        elif len(current) + len(ch_text) > budget:
+            chunks.append(current)
+            current = ch_text + "\n"
+        else:
+            current += ch_text + "\n"
+    if current:
+        chunks.append(current)
+    return chunks
+
+
+def _merge_character(existing: dict, incoming: dict) -> None:
+    """把 incoming 角色合并进 existing（原地修改）。"""
+    aliases = set(existing.get("aliases", []) or [])
+    aliases.update(incoming.get("aliases", []) or [])
+    existing["aliases"] = sorted(aliases)
+    inc_desc = incoming.get("description") or ""
+    exist_desc = existing.get("description") or ""
+    if len(inc_desc) > len(exist_desc):
+        existing["description"] = inc_desc
+    rels = existing.setdefault("relationships", [])
+    seen = {(r.get("target_name"), r.get("type")) for r in rels}
+    for rel in incoming.get("relationships", []) or []:
+        key = (rel.get("target_name"), rel.get("type"))
+        if key not in seen:
+            rels.append(rel)
+            seen.add(key)
+
+
+
 def run_stage1(project_id: str, provider_id: str = "mock", tracker=None) -> CharacterTable:
     """Run Stage 1 character extraction.
 
     Reads 02_preprocessed.json, writes 03_characters.json.
+    分块提取全文角色，避免长文本被截断。
     """
     from app.llm.registry import get_provider
     from app.models.status import PipelineStage
@@ -113,47 +189,47 @@ def run_stage1(project_id: str, provider_id: str = "mock", tracker=None) -> Char
 
     preprocessed = json.loads(preprocessed_file.read_text(encoding="utf-8"))
     language = preprocessed.get("detected_language", "zh")
+    chapters_data = preprocessed.get("chapters", [])
 
-    # Combine all chapter text for candidate extraction
-    all_text = ""
-    for chapter in preprocessed.get("chapters", []):
-        for para in chapter.get("paragraphs", []):
-            all_text += para.get("text", "") + "\n"
-
-    # Extract candidate names
+    # 候选名从全文提取（不截断）
+    all_text = "\n".join(
+        p.get("text", "") for ch in chapters_data for p in ch.get("paragraphs", [])
+    )
     candidates = _extract_candidate_names(all_text, language)
 
-    # Build prompt — 必须包含原文，否则 LLM 会编造角色
-    text_excerpt = all_text[:8000]  # 限制长度避免超 token
-
-    prompt = f"""你是一个专业的剧本分析助手。请从以下小说原文中提取所有出现过的角色。
-
-重要规则：
-- 只提取原文中明确出现的人物，不要编造
-- 如果原文中没有明确的人物，返回空数组
-- 角色名必须与原文一致
-
-候选人物名（仅供参考，可能不准确）：{', '.join(candidates) if candidates else '无'}
-
-原文：
-{text_excerpt}
-
-请提取角色信息，返回 JSON。"""
-
-    # Call LLM
-    if tracker:
-        tracker.update_progress(PipelineStage.CHARACTER_EXTRACTION, 0.3, message="正在调用 LLM 提取角色")
-    result = provider.generate_json(prompt, CHARACTER_EXTRACTION_SCHEMA)
+    # 分块提取，按角色名归并
+    chunks = _chunk_chapters(chapters_data)
+    merged: dict[str, dict] = {}
+    total = len(chunks) or 1
+    for idx, chunk in enumerate(chunks, start=1):
+        if tracker:
+            tracker.update_progress(
+                PipelineStage.CHARACTER_EXTRACTION,
+                idx / total,
+                message=f"提取角色 {idx}/{total} 块",
+            )
+        raw_chars = _extract_from_text(provider, chunk, candidates)
+        for char_data in raw_chars:
+            name = char_data.get("name")
+            if not name:
+                continue
+            if name in merged:
+                _merge_character(merged[name], char_data)
+            else:
+                merged[name] = {
+                    "name": name,
+                    "aliases": list(char_data.get("aliases", []) or []),
+                    "description": char_data.get("description"),
+                    "relationships": list(char_data.get("relationships", []) or []),
+                }
 
     # Convert to Character objects
     characters = []
     name_to_id: dict[str, str] = {}
 
-    for i, char_data in enumerate(result.get("characters", []), start=1):
-        name = char_data.get("name", f"Character_{i}")
+    for i, (name, char_data) in enumerate(merged.items(), start=1):
         char_id = make_character_id(name)
         name_to_id[name] = char_id
-
         characters.append(
             Character(
                 id=char_id,
@@ -164,7 +240,8 @@ def run_stage1(project_id: str, provider_id: str = "mock", tracker=None) -> Char
         )
 
     # Build relationships after all characters have IDs
-    for i, char_data in enumerate(result.get("characters", [])):
+    merged_list = list(merged.values())
+    for i, char_data in enumerate(merged_list):
         relationships = []
         for rel in char_data.get("relationships", []):
             target_name = rel.get("target_name", "")

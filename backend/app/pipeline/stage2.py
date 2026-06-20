@@ -59,27 +59,11 @@ SCENE_SYNTHESIS_SCHEMA = {
 }
 
 
-def _synthesize_chapter(
-    provider,
-    ch: dict,
-    characters: list[dict],
-    char_names: list[str],
-    global_scene_index: int,
-    global_element_index: int,
-) -> tuple[list[Scene], int, int]:
-    """Process one chapter and return scenes + updated indices."""
-    chapter_id = ch["id"]
-    chapter_title = ch.get("title", "")
+CHAPTER_TEXT_BUDGET = 6000  # 单次 LLM 调用的原文字符上限
 
-    # Build chapter text and paragraph map
-    chapter_text = ""
-    para_map: dict[str, dict] = {}
-    for para in ch.get("paragraphs", []):
-        chapter_text += para["text"] + "\n"
-        para_map[para["id"]] = para
 
-    chapter_excerpt = chapter_text[:6000]
-
+def _call_llm(provider, chapter_title: str, char_names: list[str], text: str) -> dict:
+    """对一段文本调用 LLM 生成场景 JSON。"""
     prompt = f"""你是一个专业的剧本改编助手。请将以下小说章节转换为剧本场景。
 
 重要规则：
@@ -94,11 +78,51 @@ def _synthesize_chapter(
 已知角色：{', '.join(char_names)}
 
 原文：
-{chapter_excerpt}
+{text}
 
 请将原文转换为剧本场景，返回 JSON。"""
+    return provider.generate_json(prompt, SCENE_SYNTHESIS_SCHEMA)
 
-    result = provider.generate_json(prompt, SCENE_SYNTHESIS_SCHEMA)
+
+def _synthesize_chapter(
+    provider,
+    ch: dict,
+    characters: list[dict],
+    char_names: list[str],
+    global_scene_index: int,
+    global_element_index: int,
+) -> tuple[list[Scene], int, int]:
+    """Process one chapter and return scenes + updated indices."""
+    chapter_id = ch["id"]
+    chapter_title = ch.get("title", "")
+
+    # Build paragraph map (for source reference matching)
+    para_map: dict[str, dict] = {}
+    for para in ch.get("paragraphs", []):
+        para_map[para["id"]] = para
+
+    chapter_text = "\n".join(p.get("text", "") for p in ch.get("paragraphs", []))
+
+    # 分块：超预算时按段落切分，每块独立调 LLM
+    if len(chapter_text) <= CHAPTER_TEXT_BUDGET:
+        chunks = [chapter_text]
+    else:
+        chunks = []
+        buf = ""
+        for para in ch.get("paragraphs", []):
+            pt = para.get("text", "")
+            if len(buf) + len(pt) > CHAPTER_TEXT_BUDGET and buf:
+                chunks.append(buf)
+                buf = ""
+            buf += pt + "\n"
+        if buf:
+            chunks.append(buf)
+
+    # 对每个块调 LLM，合并 scenes
+    all_scene_data: list[dict] = []
+    for chunk in chunks:
+        result = _call_llm(provider, chapter_title, char_names, chunk)
+        all_scene_data.extend(result.get("scenes", []))
 
     # Build character name to ID map
     name_to_id = {c["name"]: c["id"] for c in characters}
@@ -108,7 +132,7 @@ def _synthesize_chapter(
 
     scenes = []
 
-    for sc_data in result.get("scenes", []):
+    for sc_data in all_scene_data:
         global_scene_index += 1
         scene_id = make_scene_id(global_scene_index)
         elements = []
