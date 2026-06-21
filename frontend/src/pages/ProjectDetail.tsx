@@ -129,6 +129,8 @@ export default function ProjectDetail({ projectId, onBack }: Props) {
   const [validationLog, setValidationLog] = useState<ValidationLog | null>(null);
   const [validationFilter, setValidationFilter] = useState<"all" | "error" | "warning" | "info">("all");
   const [showRunMenu, setShowRunMenu] = useState(false);
+  const [progressMsg, setProgressMsg] = useState("");
+  const [progressPct, setProgressPct] = useState(0);
   const [sourceDraft, setSourceDraft] = useState("");
   const [sourceSavedText, setSourceSavedText] = useState("");
   const [savingSource, setSavingSource] = useState(false);
@@ -168,24 +170,104 @@ export default function ProjectDetail({ projectId, onBack }: Props) {
 
   useEffect(() => { loadAll(); }, [projectId]);
 
+  // SSE 进度：通过 EventSource 接收实时进度事件
+  const esRef = useRef<EventSource | null>(null);
+
+  const stageLabel: Record<string, string> = {
+    preprocessing: "文本预处理",
+    character_extraction: "角色提取",
+    scene_synthesis: "场景合成",
+    validation: "一致性校验",
+  };
+
+  const connectSSE = () => {
+    disconnectSSE();
+    const es = new EventSource(`/api/projects/${projectId}/events`);
+    esRef.current = es;
+    es.onmessage = (e) => {
+      try {
+        const d = JSON.parse(e.data);
+        if (d.status === "running" || d.status === "stage_completed") {
+          setProcessing(true);
+          setProgressPct(Math.round((d.progress ?? 0) * 100));
+          setProgressMsg(stageLabel[d.stage] ?? d.message ?? "处理中...");
+        } else if (d.status === "succeeded" || d.status === "failed") {
+          setProcessing(false);
+          setProgressMsg(d.status === "failed" ? (d.message || "失败") : "");
+          setProgressPct(d.status === "succeeded" ? 100 : 0);
+          disconnectSSE();
+          loadAll();
+        }
+      } catch { /* ignore parse errors */ }
+    };
+    es.onerror = () => {
+      disconnectSSE();
+      fetch(`/api/projects/${projectId}/status`).then(r => r.ok ? r.json() : null).then(d => {
+        if (d) {
+          setProcessing(false);
+          setProgressMsg(d.status === "failed" ? (d.error || "运行失败") : "");
+          setProgressPct(d.status === "succeeded" ? 100 : 0);
+          loadAll();
+        }
+      }).catch(() => {});
+    };
+  };
+
+  const disconnectSSE = () => {
+    if (esRef.current) { esRef.current.close(); esRef.current = null; }
+  };
+
+  // mount 时检查是否有运行中的流水线，有则自动连接 SSE
+  useEffect(() => {
+    fetch(`/api/projects/${projectId}/status`).then(r => r.ok ? r.json() : null).then(d => {
+      if (d && d.status === "running") {
+        setProcessing(true);
+        setProgressPct(Math.round((d.progress ?? 0) * 100));
+        setProgressMsg("恢复运行中...");
+        connectSSE();
+      }
+    }).catch(() => {});
+    return () => disconnectSSE();
+  }, [projectId]);
+
   const handleRunStage = async (stage: string) => {
     setProcessing(true);
+    setProgressPct(0);
+    setProgressMsg("");
+    connectSSE();
     try {
       const res = await fetch(`/api/projects/${projectId}/process?from_stage=${stage}`, { method: "POST" });
-      if (res.ok) loadAll();
-    } finally { setProcessing(false); }
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: "请求失败" }));
+        setProcessing(false);
+        setProgressMsg(err.detail || "运行失败");
+        disconnectSSE();
+      }
+    } catch {
+      setProcessing(false);
+      setProgressMsg("网络错误");
+      disconnectSSE();
+    }
   };
 
   const handleRunAll = async () => {
     setProcessing(true);
+    setProgressPct(0);
+    setProgressMsg("");
+    connectSSE();
     try {
-      const stages = ["preprocessing", "character_extraction", "scene_synthesis", "validation"];
-      for (const stage of stages) {
-        const res = await fetch(`/api/projects/${projectId}/process?from_stage=${stage}`, { method: "POST" });
-        if (!res.ok) break;
+      const res = await fetch(`/api/projects/${projectId}/process?from_stage=all`, { method: "POST" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: "请求失败" }));
+        setProcessing(false);
+        setProgressMsg(err.detail || "运行失败");
+        disconnectSSE();
       }
-      loadAll();
-    } finally { setProcessing(false); }
+    } catch {
+      setProcessing(false);
+      setProgressMsg("网络错误");
+      disconnectSSE();
+    }
   };
 
   const handleSaveScreenplay = async () => {
@@ -389,6 +471,20 @@ export default function ProjectDetail({ projectId, onBack }: Props) {
             </div>
           </div>
           <div className="flex gap-2 items-center">
+            {/* 进度指示器：仅运行时显示 */}
+            {processing && (
+              <div className="flex items-center gap-2 mr-1">
+                <div className="w-[140px] h-[4px] rounded-full bg-[rgba(0,0,0,0.08)] overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-[#0075de] transition-all duration-300"
+                    style={{ width: `${progressPct}%` }}
+                  />
+                </div>
+                <span className="text-[12px] text-[#615d59] whitespace-nowrap max-w-[160px] truncate">
+                  {progressMsg || "处理中..."}
+                </span>
+              </div>
+            )}
             {/* 运行下拉菜单 */}
             <div className="relative">
               <button onClick={() => setShowRunMenu(!showRunMenu)} disabled={processing}

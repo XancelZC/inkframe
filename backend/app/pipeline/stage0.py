@@ -90,17 +90,23 @@ def _split_into_paragraphs(text: str) -> list[tuple[str, int, int]]:
 def run_stage0(
     project_id: str,
     max_chapter_chars: int = DEFAULT_MAX_CHAPTER_CHARS,
+    tracker=None,
 ) -> PreprocessedText:
     """Run Stage 0 preprocessing on a project's raw text.
 
     Reads 01_raw.txt, writes 02_preprocessed.json.
     """
+    from app.models.status import PipelineStage
+    if tracker:
+        tracker.start_stage(PipelineStage.PREPROCESSING, "开始文本预处理")
+
     raw_text = get_raw_text(project_id)
     if raw_text is None:
         raise FileNotFoundError(f"No raw text found for project {project_id}")
 
     detected_lang = detect_language(raw_text)
     chapter_splits = _split_into_chapters(raw_text)
+    total = len(chapter_splits)
 
     chapters = []
     global_para_index = 1
@@ -178,11 +184,21 @@ def run_stage0(
                 )
             )
 
+        if tracker and total > 0:
+            tracker.update_progress(
+                PipelineStage.PREPROCESSING,
+                ch_index / total,
+                message=f"处理章节 {ch_index}/{total}",
+            )
+
     result = PreprocessedText(chapters=chapters, detected_language=detected_lang)
 
     # Write output
     output_dir = get_project_dir(project_id)
     output_file = output_dir / "02_preprocessed.json"
     output_file.write_text(result.model_dump_json(indent=2), encoding="utf-8")
+
+    if tracker:
+        tracker.complete_stage(PipelineStage.PREPROCESSING, f"预处理完成，共 {len(chapters)} 章", final=False)
 
     return result

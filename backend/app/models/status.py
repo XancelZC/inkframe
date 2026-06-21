@@ -18,6 +18,7 @@ class StatusEnum(str, Enum):
     IDLE = "idle"
     QUEUED = "queued"
     RUNNING = "running"
+    STAGE_COMPLETED = "stage_completed"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
     CANCELLED = "cancelled"

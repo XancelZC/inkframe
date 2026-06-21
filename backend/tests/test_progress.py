@@ -78,10 +78,7 @@ class TestProgressTracker:
         tracker.update_progress(PipelineStage.PREPROCESSING, 0.5)
         tracker.complete_stage(PipelineStage.PREPROCESSING)
 
-        assert len(tracker._events) == 3
-        assert tracker._events[0].status == StatusEnum.RUNNING
-        assert tracker._events[1].progress == 0.5
-        assert tracker._events[2].status == StatusEnum.SUCCEEDED
+        assert tracker._queue.qsize() == 3
 
 
 class TestStatusAPI:

@@ -9,6 +9,7 @@ Mock provider returns deterministic scene data.
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from app.models.ids import make_element_id, make_scene_id
@@ -120,21 +121,32 @@ def _synthesize_chapter(
             inferred = el_data.get("inferred", False)
             confidence = el_data.get("confidence", 0.9 if not inferred else 0.6)
 
-            # Find source reference
+            # Find source reference via single-character Jaccard similarity
             source_ref = None
-            for pid, para in para_map.items():
-                para_text = para.get("text", "")
-                if not para_text:
-                    continue
-                if para_text[:50] in content or content[:50] in para_text:
+            tokens_c = set(re.findall(r'[一-鿿]', content))
+            if tokens_c:
+                best_pid, best_score = None, 0.0
+                for pid, para in para_map.items():
+                    para_text = para.get("text", "")
+                    if not para_text:
+                        continue
+                    tokens_p = set(re.findall(r'[一-鿿]', para_text))
+                    if not tokens_p:
+                        continue
+                    inter = len(tokens_c & tokens_p)
+                    union = len(tokens_c | tokens_p)
+                    score = inter / union if union else 0.0
+                    if score > best_score:
+                        best_score, best_pid = score, pid
+                if best_pid and best_score >= 0.15:
+                    para = para_map[best_pid]
                     source_ref = SourceReference(
                         chapter_id=chapter_id,
-                        paragraph_ids=[para["id"]],
+                        paragraph_ids=[best_pid],
                         start_offset=para.get("start_offset", 0),
                         end_offset=para.get("end_offset", 0),
-                        quote=para_text[:100],
+                        quote=para.get("text", "")[:100],
                     )
-                    break
 
             char_name = el_data.get("character_name", "")
             char_id = name_to_id.get(char_name, "")
@@ -191,12 +203,15 @@ def _synthesize_chapter(
     return scenes, global_scene_index, global_element_index
 
 
-def run_stage2(project_id: str, provider_id: str = "mock") -> list[Scene]:
+def run_stage2(project_id: str, provider_id: str = "mock", tracker=None) -> list[Scene]:
     """Run Stage 2 scene synthesis on ALL chapters.
 
     Reads 02_preprocessed.json + 03_characters.json, writes 04_scenes.json.
     """
     from app.llm.registry import get_provider
+    from app.models.status import PipelineStage
+    if tracker:
+        tracker.start_stage(PipelineStage.SCENE_SYNTHESIS, "开始场景合成")
 
     provider = get_provider(provider_id)
     if provider is None:
@@ -226,7 +241,15 @@ def run_stage2(project_id: str, provider_id: str = "mock") -> list[Scene]:
     global_scene_index = 0
     global_element_index = 0
 
-    for ch in chapters:
+    total = len(chapters)
+    for ch_idx, ch in enumerate(chapters, start=1):
+        if tracker:
+            tracker.update_progress(
+                PipelineStage.SCENE_SYNTHESIS,
+                (ch_idx - 1) / total,
+                chapter_id=ch.get("id"),
+                message=f"合成场景 {ch_idx}/{total} 章",
+            )
         scenes, global_scene_index, global_element_index = _synthesize_chapter(
             provider, ch, characters, char_names, global_scene_index, global_element_index
         )
@@ -236,5 +259,8 @@ def run_stage2(project_id: str, provider_id: str = "mock") -> list[Scene]:
     output_file = get_project_dir(project_id) / "04_scenes.json"
     output_data = [s.model_dump(mode="json") for s in all_scenes]
     output_file.write_text(json.dumps(output_data, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    if tracker:
+        tracker.complete_stage(PipelineStage.SCENE_SYNTHESIS, f"场景合成完成，共 {len(all_scenes)} 个场景", final=False)
 
     return all_scenes
