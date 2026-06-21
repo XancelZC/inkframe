@@ -11,13 +11,13 @@ from pydantic import BaseModel
 
 from app.models.project import ProjectDetail, ProjectSummary
 from app.models.character import CharacterTable
-from app.models.status import PipelineStatus
+from app.models.status import PipelineStatus, PipelineStage
 from app.api.models import get_active_provider_id, get_provider_type
 from app.pipeline.stage0 import run_stage0
 from app.pipeline.stage1 import run_stage1
 from app.pipeline.stage2 import run_stage2
 from app.pipeline.stage3 import run_stage3
-from app.pipeline.progress import ProgressTracker, get_status
+from app.pipeline.progress import ProgressTracker, get_status, get_or_create_tracker, get_tracker
 from app import storage
 
 router = APIRouter(tags=["projects"])
@@ -142,33 +142,56 @@ def process_project(project_id: str, from_stage: str = "preprocessing"):
         raise HTTPException(status_code=404, detail="Project not found")
 
     # Check prerequisites
-    if from_stage not in STAGE_ORDER:
+    if from_stage not in STAGE_ORDER and from_stage != "all":
         raise HTTPException(status_code=400, detail=f"Unknown stage: {from_stage}")
 
-    stage_idx = STAGE_ORDER.index(from_stage)
-    if stage_idx > 0:
-        project_dir = storage.get_project_dir(project_id)
-        stage_files = {
-            "preprocessing": "02_preprocessed.json",
-            "character_extraction": "03_characters.json",
-            "scene_synthesis": "04_scenes.json",
-        }
-        for i in range(stage_idx):
-            prereq = STAGE_ORDER[i]
-            prereq_file = project_dir / stage_files.get(prereq, "")
-            if not prereq_file.exists():
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Cannot run '{from_stage}': prerequisite '{prereq}' has not been run",
-                )
+    if from_stage != "all":
+        stage_idx = STAGE_ORDER.index(from_stage)
+        if stage_idx > 0:
+            project_dir = storage.get_project_dir(project_id)
+            stage_files = {
+                "preprocessing": "02_preprocessed.json",
+                "character_extraction": "03_characters.json",
+                "scene_synthesis": "04_scenes.json",
+            }
+            for i in range(stage_idx):
+                prereq = STAGE_ORDER[i]
+                prereq_file = project_dir / stage_files.get(prereq, "")
+                if not prereq_file.exists():
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Cannot run '{from_stage}': prerequisite '{prereq}' has not been run",
+                    )
 
+    # 根据 active 供应商的 type 决定用哪个 LLM provider
+    active_pid = get_active_provider_id()
+    provider_id = get_provider_type(active_pid)
+    # 优先用 /events 端点已创建的 tracker（Queue 在事件循环里初始化）
+    # 没有则自己创建（单独调用场景，无 SSE 连接）
+    tracker = get_tracker(project_id) or get_or_create_tracker(project_id)
+
+    current_stage = from_stage
     try:
-        # 根据 active 供应商的 type 决定用哪个 LLM provider
-        active_pid = get_active_provider_id()
-        provider_id = get_provider_type(active_pid)
-
-        if from_stage == "preprocessing":
-            result = run_stage0(project_id)
+        if from_stage == "all":
+            current_stage = "preprocessing"
+            r0 = run_stage0(project_id, tracker=tracker)
+            current_stage = "character_extraction"
+            r1 = run_stage1(project_id, provider_id=provider_id, tracker=tracker)
+            current_stage = "scene_synthesis"
+            r2 = run_stage2(project_id, provider_id=provider_id, tracker=tracker)
+            current_stage = "validation"
+            r3 = run_stage3(project_id, tracker=tracker)
+            tracker.finish("全部阶段完成")
+            return {
+                "status": "succeeded",
+                "chapters": len(r0.chapters),
+                "characters": len(r1.characters),
+                "scenes": len(r2),
+                "errors": r3.error_count,
+            }
+        elif from_stage == "preprocessing":
+            result = run_stage0(project_id, tracker=tracker)
+            tracker.finish()
             return {
                 "status": "succeeded",
                 "stage": "preprocessing",
@@ -177,14 +200,16 @@ def process_project(project_id: str, from_stage: str = "preprocessing"):
                 "detected_language": result.detected_language,
             }
         elif from_stage == "character_extraction":
-            result = run_stage1(project_id, provider_id=provider_id)
+            result = run_stage1(project_id, provider_id=provider_id, tracker=tracker)
+            tracker.finish()
             return {
                 "status": "succeeded",
                 "stage": "character_extraction",
                 "characters": len(result.characters),
             }
         elif from_stage == "scene_synthesis":
-            result = run_stage2(project_id, provider_id=provider_id)
+            result = run_stage2(project_id, provider_id=provider_id, tracker=tracker)
+            tracker.finish()
             total_elements = sum(len(s.elements) for s in result)
             return {
                 "status": "succeeded",
@@ -193,7 +218,8 @@ def process_project(project_id: str, from_stage: str = "preprocessing"):
                 "elements": total_elements,
             }
         elif from_stage == "validation":
-            result = run_stage3(project_id)
+            result = run_stage3(project_id, tracker=tracker)
+            tracker.finish()
             return {
                 "status": "succeeded",
                 "stage": "validation",
@@ -203,12 +229,18 @@ def process_project(project_id: str, from_stage: str = "preprocessing"):
             }
         else:
             raise HTTPException(status_code=400, detail=f"Unknown stage: {from_stage}")
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except RuntimeError as e:
-        raise HTTPException(status_code=502, detail=f"LLM 调用失败: {e}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        # 确保异常时 sentinel 入队，SSE 连接能正常关闭
+        error_msg = f"{current_stage} 失败: {e}"
+        tracker.fail_stage(
+            PipelineStage(current_stage) if current_stage in [s.value for s in PipelineStage] else PipelineStage.PREPROCESSING,
+            error_msg,
+        )
+        if isinstance(e, (FileNotFoundError, ValueError)):
+            raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=502, detail=error_msg)
 
 
 @router.get("/projects/{project_id}/status")
@@ -227,7 +259,8 @@ async def project_events(project_id: str):
     if not any(p.id == project_id for p in projects):
         raise HTTPException(status_code=404, detail="Project not found")
 
-    tracker = ProgressTracker(project_id)
+    # 优先复用 process 端点已注册的 tracker，避免竞争覆盖
+    tracker = get_tracker(project_id) or get_or_create_tracker(project_id)
 
     async def generate():
         async for event in tracker.event_stream():

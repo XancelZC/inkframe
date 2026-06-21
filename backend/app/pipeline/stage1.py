@@ -92,12 +92,15 @@ CHARACTER_EXTRACTION_SCHEMA = {
 }
 
 
-def run_stage1(project_id: str, provider_id: str = "mock") -> CharacterTable:
+def run_stage1(project_id: str, provider_id: str = "mock", tracker=None) -> CharacterTable:
     """Run Stage 1 character extraction.
 
     Reads 02_preprocessed.json, writes 03_characters.json.
     """
     from app.llm.registry import get_provider
+    from app.models.status import PipelineStage
+    if tracker:
+        tracker.start_stage(PipelineStage.CHARACTER_EXTRACTION, "开始角色提取")
 
     provider = get_provider(provider_id)
     if provider is None:
@@ -138,6 +141,8 @@ def run_stage1(project_id: str, provider_id: str = "mock") -> CharacterTable:
 请提取角色信息，返回 JSON。"""
 
     # Call LLM
+    if tracker:
+        tracker.update_progress(PipelineStage.CHARACTER_EXTRACTION, 0.3, message="正在调用 LLM 提取角色")
     result = provider.generate_json(prompt, CHARACTER_EXTRACTION_SCHEMA)
 
     # Convert to Character objects
@@ -192,5 +197,8 @@ def run_stage1(project_id: str, provider_id: str = "mock") -> CharacterTable:
     # Write output
     output_file = get_project_dir(project_id) / "03_characters.json"
     output_file.write_text(table.model_dump_json(indent=2), encoding="utf-8")
+
+    if tracker:
+        tracker.complete_stage(PipelineStage.CHARACTER_EXTRACTION, f"角色提取完成，共 {len(characters)} 个角色", final=False)
 
     return table

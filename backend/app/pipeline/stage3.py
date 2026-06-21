@@ -12,11 +12,15 @@ from app.models.validation import ValidationLog, ValidationLogEntry, ValidationS
 from app.storage import get_project_dir
 
 
-def run_stage3(project_id: str) -> ValidationLog:
+def run_stage3(project_id: str, tracker=None) -> ValidationLog:
     """Run Stage 3 consistency validation.
 
     Reads 03_characters.json + 04_scenes.json, writes validation_log.json.
     """
+    from app.models.status import PipelineStage
+    if tracker:
+        tracker.start_stage(PipelineStage.VALIDATION, "开始一致性校验")
+
     project_dir = get_project_dir(project_id)
 
     # Read characters
@@ -132,5 +136,8 @@ def run_stage3(project_id: str) -> ValidationLog:
     # Write output
     output_file = project_dir / "validation_log.json"
     output_file.write_text(log.model_dump_json(indent=2), encoding="utf-8")
+
+    if tracker:
+        tracker.complete_stage(PipelineStage.VALIDATION, f"校验完成，{error_count} 错误 {warning_count} 警告", final=False)
 
     return log
