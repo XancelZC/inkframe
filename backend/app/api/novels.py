@@ -178,9 +178,16 @@ async def _import_chapter_files(
 def list_novels():
     """Return all novels with chapter info."""
     novels = storage.list_novels()
+    all_projects = storage.list_projects()
+    projects_by_novel: dict[str, list] = {}
+    for p in all_projects:
+        projects_by_novel.setdefault(p.novel_id, []).append(p)
+    for chapters in projects_by_novel.values():
+        chapters.sort(key=lambda c: c.created_at)
+
     result = []
     for novel in novels:
-        chapters = storage.list_projects_by_novel(novel.id)
+        chapters = projects_by_novel.get(novel.id, [])
         result.append(
             {
                 "id": novel.id,
